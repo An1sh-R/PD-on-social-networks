@@ -130,6 +130,17 @@ Three layers.
 
 Grid size set after pilot (cost ≈ graphs × β × A × b × reps).
 
+## Pilot results (`src/pilot.py`, LastFM, BM, 9 β × 9 A × 3 b × 3 reps × 1000 steps)
+
+Figures: `results/pilot_heatmaps.png`, `results/pilot_curves.png`. Data: `results/pilot_curves.csv`.
+
+- Final cooperation 0.19–0.69. ε=0.2 caps it to [0.1, 0.9] by construction.
+- β: flat for β ≤ 0.3 (weak-learning regime, all alike), transition β ≈ 1–10, saturates β ≥ 30.
+- A: dead zone A ≳ 0.8b → everyone always unhappy → coop ≈ 0.5, nothing happens. Interesting A ∈ [0, ~0.8b]. Interesting band shifts with b → parametrise A as fraction of b.
+- Plateau: most runs flat by 300–600 steps (β = 0.01 slowest, ~600).
+- Ridge: β ≥ 10, A ≈ 0.65b. Reps diverge (e.g. 0.41 vs 0.54) and drift for hundreds of steps. Real slow/metastable dynamics, not noise. Std between reps up to 0.08; elsewhere ≤ 0.01.
+- "Steps to plateau" heatmap overstates (tolerance 0.02 vs noise ~0.01–0.02). Block means used instead.
+
 ## Compute
 
 - Measured (model.py, plain loops, one core): GitHub 0.14 s/step (~30 s per 200-step run), LastFM 0.01 s/step (~2 s per run). Much faster than the 1–2 min feared. Model build < 1 s.
