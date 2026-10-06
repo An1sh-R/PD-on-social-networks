@@ -37,11 +37,18 @@ class Player(mesa.Agent):
             if other.action == "C":
                 n_coop_neighbors += 1
 
-        # Only cooperating neighbours pay anything: 1 to a C player, b to a D player.
-        if self.action == "C":
-            total = n_coop_neighbors * 1.0
+        if self.model.game == "weak_pd":
+            # Only cooperating neighbours pay anything: 1 to a C player, b to a D player.
+            if self.action == "C":
+                total = n_coop_neighbors * 1.0
+            else:
+                total = n_coop_neighbors * self.model.b
         else:
+            # Donation game: every cooperating neighbour gives me b;
+            # if I cooperate I pay c to each neighbour.
             total = n_coop_neighbors * self.model.b
+            if self.action == "C":
+                total = total - self.model.c * len(self.neighbors)
 
         if self.payoff_scheme == "average":
             total = total / len(self.neighbors)
@@ -113,7 +120,7 @@ def cooperation_fraction(model):
 class CooperationModel(mesa.Model):
     def __init__(self, G, agent_type, b=1.5, payoff_scheme="average", kappa=0.1,
                  beta=1.0, aspiration=0.5, epsilon=0.2, initial_coop=0.5,
-                 record_from=0, seed=None):
+                 record_from=0, game="weak_pd", c=1.0, seed=None):
         """
         G: networkx graph, connected, nodes labelled 0..n-1 (see networks.py)
         agent_type: "fermi" or "bm"
@@ -121,6 +128,8 @@ class CooperationModel(mesa.Model):
         payoff_scheme: "average" or "accumulated" (Fermi only; BM is always average)
         kappa: Fermi noise. beta, aspiration, epsilon: BM sensitivity, aspiration A, slip rate.
         record_from: from this round on (0 = first round), count each node's cooperation
+        game: "weak_pd" (main study) or "donation" (only to check BM against Ezaki & Masuda 2017)
+        c: cost of cooperating in the donation game (b = benefit there)
         seed: int, makes the run repeatable
         """
         super().__init__(rng=seed)  # int seed makes runs repeatable
@@ -128,7 +137,11 @@ class CooperationModel(mesa.Model):
             raise ValueError("agent_type must be 'fermi' or 'bm'")
         if payoff_scheme not in ("average", "accumulated"):
             raise ValueError("payoff_scheme must be 'average' or 'accumulated'")
+        if game not in ("weak_pd", "donation"):
+            raise ValueError("game must be 'weak_pd' or 'donation'")
 
+        self.game = game
+        self.c = c
         self.b = b
         self.kappa = kappa
         self.beta = beta

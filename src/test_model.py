@@ -53,6 +53,21 @@ def test_payoff_average_divides_by_degree():
     assert close(model.players[0].payoff, 1.5)  # 4.5 / 3
 
 
+def test_payoff_donation_game():
+    # star, b=6, c=1, average payoff. Centre C, leaves C, C, D.
+    G = nx.star_graph(3)
+    model = CooperationModel(G, "bm", game="donation", b=6.0, c=1.0, seed=1)
+    model.players[0].action = "C"
+    model.players[1].action = "C"
+    model.players[2].action = "C"
+    model.players[3].action = "D"
+    for player in model.players:
+        player.compute_payoff()
+    assert close(model.players[0].payoff, (2 * 6 - 3 * 1) / 3)  # gets 2 gifts, pays 3 neighbours
+    assert close(model.players[1].payoff, 6 - 1)  # C leaf: gift from centre, pays centre
+    assert close(model.players[3].payoff, 6)  # D leaf: gift, pays nothing
+
+
 def test_bm_always_uses_average_payoff():
     G = nx.star_graph(3)
     model = CooperationModel(G, "bm", payoff_scheme="accumulated", seed=1)

@@ -28,6 +28,7 @@ Experimentation/
     plot_graphs.py    draw each real graph + synthetic equivalents -> graphs/ [done]
     model.py          mesa agents (BM, Fermi) + model                         [done]
     test_model.py     simple asserts for model.py (python src/test_model.py)  [done]
+    validate_bm.py    BM vs Ezaki & Masuda 2017 rings -> results/            [done]
     run.py            parameter sweep -> results/
     analyze.py        stats + figures
   graphs/           network drawings (one png per real graph)

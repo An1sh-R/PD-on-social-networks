@@ -68,6 +68,21 @@ Both: play weak PD with all neighbours each round. Synchronous. Mesa 3 has no `S
 - Mesa 3.5: use `rng=` not `seed=` (deprecated). `model.random` still stdlib Random seeded from it.
 - First smoke run, b=1.2, LastFM: Fermi-averaged → cooperation collapses to 0.00; Fermi-accumulated → 0.67; BM 0.45. Matches the known hub effect of accumulated payoffs, so payoff scheme is a real confound, keep it crossed.
 
+### BM validation (`src/validate_bm.py`) — PASSED (qualitative)
+
+Ezaki & Masuda 2017 setup: ring N=100, donation game c=1, β=0.2, A=1.0, ε=0.05, p0=0.8, 50 rounds, avg rounds 1–25, 1000 runs. Model has `game="donation"` option for this only.
+
+| k | static − shuffled, b/c=2 | static − shuffled, b/c=6 |
+|---|---|---|
+| 2 | +0.008 | **+0.127** |
+| 4 | +0.003 | +0.062 |
+| 6 | +0.002 | +0.015 |
+| 8 | +0.002 | +0.005 |
+
+- All 3 paper claims hold: reciprocity at b/c=6 k=2; none at b/c=2; gap shrinks with k.
+- Paper gives no numbers in text → shape match only, not exact values. Figure: `results/validate_bm.png`.
+- Note for main study: BM *is* structure-sensitive here, at β=0.2 (not tiny). Fits H2.
+
 ### Bush–Mosteller (Ezaki et al. 2016)
 
 - State: p = cooperation propensity.
@@ -101,15 +116,19 @@ Three layers.
 
 ## Parameters (provisional)
 
+**Main focus = BM.** Main run: large, dense β × A grid for BM. Fermi = baseline only, coarser grid.
+
 | Param | Values | Note |
 |---|---|---|
 | b | 1.1–2.0 | weak PD temptation |
-| β | TBD, wide log-ish range | key sweep |
-| A | 0.2, 0.5, 0.8 | BM only |
+| β | large dense grid, log-spaced (e.g. 0.01 → 100) | key sweep, BM |
+| A | large dense grid across payoff range [0, b] | key sweep, BM. Avg payoff in weak PD ∈ [0, b] |
 | ε | 0.2 | BM, fixed |
 | κ | 0.1 | Fermi, fixed |
-| init | 50% C | Fermi; BM p random or 0.5 TBD |
+| init | 50% C (Fermi), p = 0.5 (BM) | |
 | steps, reps | TBD | from pilot |
+
+Grid size set after pilot (cost ≈ graphs × β × A × b × reps).
 
 ## Compute
 
