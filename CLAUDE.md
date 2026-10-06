@@ -26,7 +26,8 @@ Experimentation/
   src/              ALL code lives here, flat, no subfolders
     networks.py       load, clean, synthetic equivalents, topology metrics   [done]
     plot_graphs.py    draw each real graph + synthetic equivalents -> graphs/ [done]
-    model.py          mesa agents (BM, Fermi) + model
+    model.py          mesa agents (BM, Fermi) + model                         [done]
+    test_model.py     simple asserts for model.py (python src/test_model.py)  [done]
     run.py            parameter sweep -> results/
     analyze.py        stats + figures
   graphs/           network drawings (one png per real graph)
@@ -37,3 +38,9 @@ Experimentation/
 - Scripts import each other directly (`from networks import ...`). No packages, no `__init__.py`.
 - Split a file only when it passes ~300 lines.
 - No utils grab-bag.
+
+## Git
+
+- Remote: https://github.com/An1sh-R/PD-on-social-networks.git (branch main).
+- Commit + push automatically at each milestone (a finished, checked piece of work). Short message, say what and why.
+- Never commit: `.venv/`, `ResearchQ/guide.pdf`.

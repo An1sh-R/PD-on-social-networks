@@ -58,6 +58,16 @@ Both: play weak PD with all neighbours each round. Synchronous. Mesa 3 has no `S
 - `math.exp` overflows on accumulated payoffs (Facebook, Δ/κ up to ~15,000). Use `scipy.special.expit`.
 - Payoff scheme flag: accumulated (classic) or averaged.
 
+### Implementation notes (`src/model.py`)
+
+- Classes: `FermiAgent`, `BMAgent` (both subclass `Player`), `CooperationModel`. Checks: `python src/test_model.py` (13 checks).
+- Update phase reads only frozen actions + payoffs, so in-place sequential updates = synchronous. No `next_strategy` buffer.
+- Fermi copies neighbour's *action* (= its strategy). BM initial p = `initial_coop` (0.5) for every node.
+- Cooperation recorded = fraction of C **actions played** that round, for both agents (comparable).
+- `record_from` = round index (0-based) from which per-node cooperation is counted. Own counter, because mesa's `steps` is already +1 inside `step()`.
+- Mesa 3.5: use `rng=` not `seed=` (deprecated). `model.random` still stdlib Random seeded from it.
+- First smoke run, b=1.2, LastFM: Fermi-averaged → cooperation collapses to 0.00; Fermi-accumulated → 0.67; BM 0.45. Matches the known hub effect of accumulated payoffs, so payoff scheme is a real confound, keep it crossed.
+
 ### Bush–Mosteller (Ezaki et al. 2016)
 
 - State: p = cooperation propensity.
@@ -103,8 +113,8 @@ Three layers.
 
 ## Compute
 
-- GitHub: ~578k neighbour visits/step. Pure-Python mesa maybe 1–2 min per 200-step run.
-- Timing pilot before any sweep. Fallbacks: fewer reps on big graphs, simple adjacency-list payoff function (no clever code).
+- Measured (model.py, plain loops, one core): GitHub 0.14 s/step (~30 s per 200-step run), LastFM 0.01 s/step (~2 s per run). Much faster than the 1–2 min feared. Model build < 1 s.
+- Run budget still needs a pilot: rough 25 graphs × 3 arms × β × b × A × reps. Decide sizes after pilot. Multiprocessing if needed.
 
 ## Still open
 
