@@ -2,3 +2,5 @@
 __pycache__/
 *.pyc
 ResearchQ/guide.pdf
+results/sweep_test_*
+results/*_nodes/

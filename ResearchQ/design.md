@@ -144,6 +144,9 @@ Figures: `results/pilot_heatmaps.png`, `results/pilot_curves.png`. Data: `result
 ## Compute
 
 - Measured (model.py, plain loops, one core): GitHub 0.14 s/step (~30 s per 200-step run), LastFM 0.01 s/step (~2 s per run). Much faster than the 1–2 min feared. Model build < 1 s.
+- Parallel: 8 processes ≈ 3× one process (95 vs 33 runs/min on LastFM), not 8×. Cores share memory.
+- Main sweep cost, all 25 graphs, 1000 steps: ≈ 5 min per (β, a, b, rep) setting. 400 settings ≈ 35 h, 1200 ≈ 100 h, 1920 ≈ 160 h. Cut options: 800 steps, 3 reps off the ridge, fewer graphs.
+- `src/run.py`: arms bm / fermi_average / fermi_accumulated. A = a·b. One CSV row per run (`results/sweep_runs.csv`), written immediately; restart skips done runs, drops cut-off last line. Per-node cooperation saved for real graphs, rep 0 only (`results/sweep_nodes/*.npy`, gitignored). `--test` = tiny grid.
 - Run budget still needs a pilot: rough 25 graphs × 3 arms × β × b × A × reps. Decide sizes after pilot. Multiprocessing if needed.
 
 ## Still open

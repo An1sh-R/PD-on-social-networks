@@ -30,7 +30,7 @@ Experimentation/
     test_model.py     simple asserts for model.py (python src/test_model.py)  [done]
     validate_bm.py    BM vs Ezaki & Masuda 2017 rings -> results/            [done]
     pilot.py          coarse BM beta x A x b scan on LastFM -> results/       [done]
-    run.py            parameter sweep -> results/
+    run.py            parameter sweep -> results/ (--test = tiny grid)        [done]
     analyze.py        stats + figures
   graphs/           network drawings (one png per real graph)
   results/          csv, result figures
