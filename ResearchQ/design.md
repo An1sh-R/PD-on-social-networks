@@ -141,6 +141,15 @@ Figures: `results/pilot_heatmaps.png`, `results/pilot_curves.png`. Data: `result
 - Ridge: β ≥ 10, A ≈ 0.65b. Reps diverge (e.g. 0.41 vs 0.54) and drift for hundreds of steps. Real slow/metastable dynamics, not noise. Std between reps up to 0.08; elsewhere ≤ 0.01.
 - "Steps to plateau" heatmap overstates (tolerance 0.02 vs noise ~0.01–0.02). Block means used instead.
 
+## Re-pilot, ε = 0.05 (`results/pilot_*_eps0.05.*`, same grid)
+
+- Range now 0.06–0.82 (was 0.19–0.69). ε=0.05 gives real room.
+- β ≤ 0.3: still flat across β (weak-learning regime), but slow: β=0.01, A=0 still drifting at step 1000 (0.22 and falling). A=0 → every payoff satisfies → slow drift.
+- Dead zone A ≳ 0.8b remains (coop ≈ 0.5).
+- **Bistability** at high β (3–30), A ≈ 0.65–0.8b, larger b. Reps end in different states: β=10, A=1.5, b=1.9 → 0.16 vs 0.76 vs 0.80, still separating at step 1000. Outcome depends on early random history. Mean of reps misleading here → report distribution, need many reps (≥20), longer runs.
+- Elsewhere: plateau by 300–600 steps, rep spread ≤ 0.01.
+- Implication for structure test: β=0.5 sits in the flat regime → likely "no structure effect" there. Interesting regime is high β.
+
 ## Compute
 
 - Measured (model.py, plain loops, one core): GitHub 0.14 s/step (~30 s per 200-step run), LastFM 0.01 s/step (~2 s per run). Much faster than the 1–2 min feared. Model build < 1 s.
