@@ -120,17 +120,25 @@ def steps(means):
         by_type = {}
         for _, row in group.iterrows():
             by_type[row["graph_type"]] = row["cooperation"]
-        if "real" in by_type and "degseq" in by_type and "er" in by_type:
-            row = dict(zip(keys, key))
+        # each comparison is computed whenever its own two graphs are in the sweep
+        row = dict(zip(keys, key))
+        row["partner_effect"] = np.nan
+        row["structure_effect"] = np.nan
+        row["degree_effect"] = np.nan
+        if "real" in by_type and "shuffled" in by_type:
+            row["partner_effect"] = by_type["real"] - by_type["shuffled"]
+        if "real" in by_type and "degseq" in by_type:
             row["structure_effect"] = by_type["real"] - by_type["degseq"]
+        if "degseq" in by_type and "er" in by_type:
             row["degree_effect"] = by_type["degseq"] - by_type["er"]
-            if "shuffled" in by_type:
-                row["partner_effect"] = by_type["real"] - by_type["shuffled"]
-            else:
-                row["partner_effect"] = np.nan
+        has_any = False
+        for name in ["partner_effect", "structure_effect", "degree_effect"]:
+            if not np.isnan(row[name]):
+                has_any = True
+        if has_any:
             rows.append(row)
     if not rows:
-        print("steps: no family has real + degseq + er, skipped")
+        print("steps: no comparable graph pairs in the sweep, skipped")
         return None
     table = pd.DataFrame(rows)
     table.to_csv(out_path("_steps.csv"), index=False)

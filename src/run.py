@@ -28,7 +28,7 @@ from multiprocessing import Pool
 import numpy as np
 
 from model import CooperationModel
-from networks import REAL_FILES, RESULTS_DIR, all_names, load_graph
+from networks import REAL_FILES, RESULTS_DIR, all_names, load_graph, rewired_names
 
 TEST = "--test" in sys.argv
 
@@ -42,6 +42,7 @@ if TEST:
     A_FRACTIONS = [0.3, 0.6]
     TEMPTATIONS = [1.5]
     REPS = 2
+    BAND_REPS = 4
     STEPS = 60
     WINDOW = 20
     OUT_NAME = "sweep_test"
@@ -53,6 +54,7 @@ else:
     A_FRACTIONS = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
     TEMPTATIONS = [1.1, 1.3, 1.5, 1.7, 2.0]
     REPS = 5
+    BAND_REPS = 20  # high-beta band: repeat runs disagree there (pilot), see reps_for()
     STEPS = 1500
     WINDOW = 500  # final cooperation = mean over the last 500 steps (eps=0.05 pilot: most flat by ~600)
     OUT_NAME = "sweep"
@@ -62,12 +64,13 @@ EPSILON = 0.05  # as Ezaki & Masuda 2017; 0.2 squeezed cooperation into [0.1, 0.
 KAPPA = 0.1
 # 8 processes on this 10-core laptop give ~3x speed-up over 1 (not 8x: cores share memory).
 N_PROCESSES = 8
+N_BUILD_PROCESSES = 3  # building rewired graphs needs more memory per process
 
 RUNS_PATH = os.path.join(RESULTS_DIR, OUT_NAME + "_runs.csv")
 NODES_DIR = os.path.join(RESULTS_DIR, OUT_NAME + "_nodes")  # per-node cooperation
 
 COLUMNS = ["run_id", "graph", "family", "graph_type", "agent", "b", "beta",
-           "a_fraction", "aspiration", "epsilon", "kappa", "rep", "steps",
+           "a_fraction", "aspiration", "epsilon", "kappa", "rep", "source_graph", "steps",
            "cooperation", "cooperation_std", "mean_p", "seconds"]
 
 
@@ -78,24 +81,48 @@ def make_run_id(job):
             f"|a={job['a_fraction']}|rep={job['rep']}")
 
 
+def reps_for(beta, a_fraction):
+    """More repeats where the eps=0.05 pilot showed repeat runs ending at different
+    cooperation levels (beta >= 3, a = 0.6-0.8). Fixed before the sweep, not chosen
+    after seeing results."""
+    if beta >= 3.0 and 0.6 <= a_fraction <= 0.8:
+        return BAND_REPS
+    return REPS
+
+
+def source_graph(graph, rep):
+    """The graph file a run actually loads.
+    degseq: rep r uses rewiring r % 5, so the result does not hang on one random graph.
+    shuffled: the real graph (players are re-seated during the run instead)."""
+    if graph.endswith("_degseq"):
+        real_name = graph[:-len("_degseq")]
+        names = rewired_names(real_name)
+        return names[rep % len(names)]
+    if graph.endswith("_shuffled"):
+        return graph[:-len("_shuffled")]
+    return graph
+
+
 def make_jobs():
     """Every run in the sweep, grouped by graph (workers then reuse the loaded graph)."""
     jobs = []
     for graph in GRAPHS:
         for b in TEMPTATIONS:
-            for rep in range(REPS):
-                for beta in BETAS:
-                    for a_fraction in A_FRACTIONS:
+            for beta in BETAS:
+                for a_fraction in A_FRACTIONS:
+                    for rep in range(reps_for(beta, a_fraction)):
                         jobs.append({"graph": graph, "agent": "bm", "b": b, "beta": beta,
                                      "a_fraction": a_fraction, "rep": rep})
-                if not RUN_FERMI:
-                    continue
-                # Fermi does not use beta or aspiration
+            if not RUN_FERMI:
+                continue
+            # Fermi does not use beta or aspiration
+            for rep in range(REPS):
                 for agent in ["fermi_average", "fermi_accumulated"]:
                     jobs.append({"graph": graph, "agent": agent, "b": b, "beta": "-",
                                  "a_fraction": "-", "rep": rep})
     for job in jobs:
         job["run_id"] = make_run_id(job)
+        job["source_graph"] = source_graph(job["graph"], job["rep"])
     return jobs
 
 
@@ -135,8 +162,6 @@ cached_graph = None
 
 def get_graph(name):
     global cached_name, cached_graph
-    if name.endswith("_shuffled"):
-        name = name[:-len("_shuffled")]  # shuffled runs use the real graph
     if name != cached_name:
         cached_graph = load_graph(name)
         cached_name = name
@@ -151,7 +176,7 @@ def graph_type(name):
 
 def run_one(job):
     start = time.time()
-    G = get_graph(job["graph"])
+    G = get_graph(job["source_graph"])
     record_from = STEPS - WINDOW
     shuffle = job["graph"].endswith("_shuffled")
 
@@ -192,6 +217,7 @@ def run_one(job):
         "epsilon": EPSILON if job["agent"] == "bm" else "-",
         "kappa": KAPPA if job["agent"] != "bm" else "-",
         "rep": job["rep"],
+        "source_graph": job["source_graph"],
         "steps": STEPS,
         "cooperation": float(window.mean()),
         "cooperation_std": float(window.std()),
@@ -213,17 +239,38 @@ def node_file_name(run_id):
 
 # ---- main ------------------------------------------------------------------
 
+def build_graph(name):
+    load_graph(name)  # builds and caches it in data/synthetic/ if missing
+    return name
+
+
+def build_missing_graphs(jobs):
+    """Build every graph file the sweep needs before the runs start, so parallel
+    workers never try to create the same file at the same time."""
+    needed = []
+    for job in jobs:
+        if job["source_graph"] not in needed:
+            needed.append(job["source_graph"])
+    print(f"making sure {len(needed)} graph files exist (first time: a GitHub rewiring takes ~5 min)")
+    with Pool(N_BUILD_PROCESSES) as pool:
+        for name in pool.imap_unordered(build_graph, needed):
+            pass
+
+
 def main():
     os.makedirs(RESULTS_DIR, exist_ok=True)
     os.makedirs(NODES_DIR, exist_ok=True)
 
     remove_cut_off_line()
     all_jobs = make_jobs()
+    build_missing_graphs(all_jobs)
     done = finished_run_ids()
     todo = []
     for job in all_jobs:
         if job["run_id"] not in done:
             todo.append(job)
+    # same graph file next to each other: workers then mostly reuse their loaded graph
+    todo.sort(key=lambda job: job["source_graph"])
     print(f"{len(all_jobs)} runs in sweep, {len(done)} already done, {len(todo)} to go")
     if not todo:
         return

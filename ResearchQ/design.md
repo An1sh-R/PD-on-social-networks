@@ -148,6 +148,14 @@ Figures: `results/pilot_heatmaps.png`, `results/pilot_curves.png`. Data: `result
 - analyze.py: shuffled excluded from sensitivity + regression (not a new topology); new step real − shuffled = fixed-partner effect, next to real − degseq and degseq − ER.
 - `structure_test.py` / `structure_summary.py` = mentor's standalone version (β fixed 0.5). Superseded by the main sweep; kept for reference.
 
+## Fixes after code review (2026-10-07)
+
+- degseq in main sweep: rep r loads rewiring r % 5 (`<real>_rewired0..4`, seeds 1000+r). Results no longer hang on one random graph. No extra runs. Row column `source_graph` says which file was used. (`topology_table.csv` still lists the seed-42 degseq; rewirings have identical degrees, similar clustering.)
+- Reps: 5 default, **20 in the high-β band** (β ≥ 3 and a = 0.6–0.8), fixed before the sweep. Reason: pilot seeds diverge there (e.g. 0.16 / 0.76 / 0.80); SE of mean ≈ 0.16 with 5 reps vs 0.08 with 20. Grid as written: 510 cells × 5 + 90 cells × 20 = 4350 runs per graph (+45% vs flat 5 reps).
+- analyze.py steps(): each comparison computed whenever its own pair exists (was: nothing without ER).
+- Timing: single-core measurements on this laptop vary 2–4× (e.g. 3 small networks × 3 types: 0.056 vs 0.093 s/step on different runs). Quote ranges, or benchmark actual parallel sweep jobs.
+- Still open: GRAPHS (currently all 30), whether to drop β=0.01 (still drifting at 1000 steps) and a=0.9 (dead zone).
+
 ## Cost of main sweep (measured 2026-10-07)
 
 - Memory: < 0.2 GB Python objects per worker, even GitHub. 8 workers OK.
