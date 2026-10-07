@@ -77,7 +77,7 @@ NODES_DIR = os.path.join(RESULTS_DIR, OUT_NAME + "_nodes")  # per-node cooperati
 
 COLUMNS = ["run_id", "graph", "family", "graph_type", "agent", "b", "beta",
            "a_fraction", "aspiration", "epsilon", "kappa", "rep", "source_graph", "steps",
-           "cooperation", "cooperation_std", "mean_p", "seconds"]
+           "cooperation", "cooperation_std", "drift", "mean_p", "seconds"]
 
 
 # ---- jobs ------------------------------------------------------------------
@@ -227,6 +227,9 @@ def run_one(job):
         "steps": STEPS,
         "cooperation": float(window.mean()),
         "cooperation_std": float(window.std()),
+        # second half of the window minus first half: ~0 if the run had settled,
+        # big if it was still moving (tells slow convergence from bistability)
+        "drift": float(window[WINDOW // 2:].mean() - window[:WINDOW // 2].mean()),
         "mean_p": mean_p,
         "seconds": round(time.time() - start, 2),
     }

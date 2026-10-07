@@ -155,6 +155,8 @@ Figures: `results/pilot_heatmaps.png`, `results/pilot_curves.png`. Data: `result
 - analyze.py steps(): each comparison computed whenever its own pair exists (was: nothing without ER).
 - Timing: single-core measurements on this laptop vary 2–4× (e.g. 3 small networks × 3 types: 0.056 vs 0.093 s/step on different runs). Quote ranges, or benchmark actual parallel sweep jobs.
 - **Decided:** GRAPHS = real, degseq, shuffled for all 5 networks (15 graphs, no ER/BA/WS). Order: facebook, lastfm, twitch, deezer, github, so small networks finish first. β=0.01 and a=0.9 kept (flag in analysis: β=0.01 not settled at 1000 steps; a=0.9 dead zone). 4350 runs per graph, 65,250 total.
+- `drift` column per run = mean(last 250) − mean(first 250) of the 500-step window. ~0 = settled. Lets the sweep itself tell slow convergence from bistability.
+- analyze.py diagnostics: per cell status = "still moving" (mean |drift| > 0.02), "settled, repeats differ" (rep std > 0.05, bistability candidate) or "ok". Prints share of moving cells at β=0.01 vs rest, dead-zone mean. Beta plots leave out a ≥ 0.9 and shade β=0.01. Output `sweep_diagnostics.csv/.png`.
 - Consequence: no degseq − ER step; regression has only 10 topologies (real + degseq × 5) for 4 features → weak, treat as descriptive.
 
 ## Cost of main sweep (measured 2026-10-07)

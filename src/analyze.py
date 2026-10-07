@@ -8,6 +8,8 @@ sensitivity of BM change with beta, and which network features drive it?
                  degseq - er     (degree heterogeneity)
 3. Regression    cooperation ~ standardised graph features, across topologies
 4. Node level    per-node cooperation vs degree and local clustering (real graphs)
+0. Diagnostics   is each cell settled? (drift) Do repeats agree? (spread between reps)
+                 Flags known problem spots: beta = 0.01 (slow), a = 0.9 (dead zone).
 
 BM is plotted against beta (averaged over aspiration), one line per b.
 Fermi has no beta: its values are drawn as grey horizontal lines.
@@ -35,6 +37,11 @@ FEATURES = ["mean_degree", "degree_cv", "clustering", "assortativity"]
 FERMI_ARMS = ["fermi_average", "fermi_accumulated"]
 FERMI_STYLES = {"fermi_average": ":", "fermi_accumulated": "--"}
 
+DRIFT_LIMIT = 0.02  # |drift| above this: run was still moving at the end
+SPREAD_LIMIT = 0.05  # std between repeats above this: repeats end at different levels
+SLOW_BETA = 0.01  # pilot: not settled by 1000 steps
+DEAD_ZONE_A = 0.9  # pilot: a >= 0.9 -> everyone unhappy, cooperation ~0.5, nothing happens
+
 
 def out_path(suffix):
     return os.path.join(RESULTS_DIR, NAME + suffix)
@@ -60,9 +67,14 @@ def bm_only(table):
 def plot_vs_beta(ax, table, value, ylabel):
     """BM: value vs beta (mean over aspiration), one line per b. Fermi: grey lines."""
     bm = bm_only(table)
+    # dead zone left out of the average over aspiration: it would only flatten the lines
+    bm = bm[bm["a_fraction"] < DEAD_ZONE_A]
     for b in sorted(bm["b"].unique()):
         line = bm[bm["b"] == b].groupby("beta")[value].mean()
         ax.plot(line.index, line.values, marker="o", markersize=3, label=f"BM b={b:g}")
+    if len(bm) > 0 and bm["beta"].min() <= SLOW_BETA:
+        ax.axvspan(SLOW_BETA * 0.7, SLOW_BETA * 1.4, color="orange", alpha=0.15,
+                   label=f"beta={SLOW_BETA:g}: may not be settled")
     for arm in FERMI_ARMS:
         fermi = table[table["agent"] == arm]
         if len(fermi) > 0:
@@ -71,6 +83,72 @@ def plot_vs_beta(ax, table, value, ylabel):
     ax.set_xscale("log")
     ax.set_xlabel("beta")
     ax.set_ylabel(ylabel)
+
+
+# ---- 0. diagnostics ----------------------------------------------------------
+
+def diagnostics(runs):
+    """Per cell (graph, b, beta, a): settled? repeats agree? Uses the drift column."""
+    bm = bm_only(runs)
+    if "drift" not in bm.columns:
+        print("diagnostics: no drift column (sweep made before it was added), skipped")
+        return None
+    bm["abs_drift"] = bm["drift"].abs()
+    keys = ["graph", "graph_type", "b", "beta", "a_fraction"]
+    cells = bm.groupby(keys, as_index=False).agg(
+        mean_abs_drift=("abs_drift", "mean"), rep_spread=("cooperation", "std"),
+        cooperation=("cooperation", "mean"), n_reps=("rep", "count"))
+
+    statuses = []
+    for _, cell in cells.iterrows():
+        if cell["mean_abs_drift"] > DRIFT_LIMIT:
+            statuses.append("still moving")  # slow convergence: longer runs needed
+        elif cell["rep_spread"] > SPREAD_LIMIT:
+            statuses.append("settled, repeats differ")  # bistability candidate
+        else:
+            statuses.append("ok")
+    cells["status"] = statuses
+    cells.to_csv(out_path("_diagnostics.csv"), index=False)
+
+    print()
+    print("DIAGNOSTICS (BM cells)")
+    print(cells["status"].value_counts().to_string())
+    slow = cells[cells["beta"] <= SLOW_BETA]
+    other = cells[cells["beta"] > SLOW_BETA]
+    if len(slow) > 0 and len(other) > 0:
+        print(f"still moving: beta={SLOW_BETA:g} {(slow['status'] == 'still moving').mean():.0%} "
+              f"of cells, other betas {(other['status'] == 'still moving').mean():.0%}")
+    dead = cells[cells["a_fraction"] >= DEAD_ZONE_A]
+    if len(dead) > 0:
+        print(f"dead zone a>={DEAD_ZONE_A:g}: mean cooperation {dead['cooperation'].mean():.3f} "
+              f"(range {dead['cooperation'].min():.3f}-{dead['cooperation'].max():.3f}); "
+              f"left out of beta plots")
+
+    # heatmaps beta x a, averaged over graphs: drift (top) and rep spread (bottom)
+    temptations = sorted(cells["b"].unique())
+    fig, axes = plt.subplots(2, len(temptations), figsize=(4 * len(temptations), 7.5), squeeze=False)
+    rows = [("mean_abs_drift", "mean |drift|", 2 * DRIFT_LIMIT),
+            ("rep_spread", "std between repeats", 2 * SPREAD_LIMIT)]
+    for r, (column, label, vmax) in enumerate(rows):
+        image = None
+        for c, b in enumerate(temptations):
+            ax = axes[r][c]
+            part = cells[cells["b"] == b].groupby(["a_fraction", "beta"], as_index=False)[column].mean()
+            grid = part.pivot(index="a_fraction", columns="beta", values=column)
+            image = ax.imshow(grid.values, origin="lower", aspect="auto", cmap="Reds", vmin=0, vmax=vmax)
+            ax.set_xticks(range(len(grid.columns)))
+            ax.set_xticklabels([f"{x:g}" for x in grid.columns], rotation=45)
+            ax.set_yticks(range(len(grid.index)))
+            ax.set_yticklabels([f"{y:g}" for y in grid.index])
+            ax.set_xlabel("beta")
+            ax.set_ylabel("a = A/b")
+            ax.set_title(f"{label}, b = {b:g}", fontsize=9)
+        fig.colorbar(image, ax=axes[r].tolist(), shrink=0.8)
+    fig.suptitle(f"Diagnostics (mean over graphs). Red top = still moving (> {DRIFT_LIMIT}); "
+                 f"red bottom = repeats disagree (> {SPREAD_LIMIT})")
+    fig.savefig(out_path("_diagnostics.png"), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return cells
 
 
 # ---- 1. sensitivity ----------------------------------------------------------
@@ -252,6 +330,7 @@ def node_level(runs):
 def main():
     runs, means = load_condition_means()
     print(f"{len(runs)} runs, {means['graph'].nunique()} graphs, {len(means)} condition means")
+    diagnostics(runs)
     sensitivity(means)
     steps(means)
     regression(means)
