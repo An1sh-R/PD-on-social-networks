@@ -25,11 +25,11 @@ How does topology sensitivity of Bush–Mosteller (BM) aspiration learning chang
 
 (Up to date version: `design.md`. Three comparisons per real graph: real vs shuffled seats = fixed partners; real vs degseq = structure beyond degree; degseq vs ER = degree heterogeneity.)
 
-- Networks: SNAP ego-Facebook, email-Eu-core, ca-GrQc. Clean first: drop self-loops, keep largest component.
-- Null models per real network: degree-preserving rewire → + assortativity → + clustering → + communities. Each step isolates one feature.
-- Agents: BM (tanh stimulus, ε noise, per Ezaki 2016) vs Fermi.
-- Sweep: β (and aspiration A), b, payoff scheme (accumulated vs averaged). Payoff scheme crossed = confound control.
-- Outcome: mean cooperation over late window, check plateau per run.
+- Networks: Facebook, LastFM, Twitch ENGB, Deezer, GitHub (cleaned: no self-loops, largest component).
+- Null models per real network: degree-preserving rewire (5 rewirings) + shuffled seats. (Original plan of a ladder + assortativity → + clustering → + communities: dropped for now.)
+- Agents: BM (tanh stimulus, ε = flip prob, per Ezaki 2016 / Ezaki & Masuda 2017). Fermi later.
+- Sweep: β × aspiration (a = A/b) × b. Payoff scheme only matters for Fermi (later).
+- Outcome: mean cooperation over last 500 of 1500 steps; drift and oscillation recorded per run.
 
 ## Decisions
 

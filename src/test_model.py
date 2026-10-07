@@ -105,6 +105,22 @@ def test_bm_p_stays_between_0_and_1():
         assert -1e-12 <= player.p <= 1 + 1e-12, player.p
 
 
+def test_bm_slip_flips_intended_action():
+    # eps = 0.2: a sure cooperator (p=1) still defects 20% of the time, a sure
+    # defector (p=0) cooperates 20% of the time (flip, not a random pick)
+    G = nx.path_graph(2)
+    model = CooperationModel(G, "bm", epsilon=0.2, seed=1)
+    player = model.players[0]
+    for p, expected_coop in [(1.0, 0.8), (0.0, 0.2), (0.5, 0.5)]:
+        player.p = p
+        n_coop = 0
+        for _ in range(20000):
+            player.choose_action()
+            if player.action == "C":
+                n_coop += 1
+        assert abs(n_coop / 20000 - expected_coop) < 0.015, (p, n_coop / 20000)
+
+
 def test_fermi_huge_payoff_gap_does_not_overflow():
     G = nx.path_graph(2)
     model = CooperationModel(G, "fermi", kappa=0.1, seed=1)

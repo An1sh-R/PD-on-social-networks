@@ -42,6 +42,8 @@ Per real graph. Same N, largest component only.
 - Catch: ER/BA/WS differ from real in many features at once. Gap real vs synthetic can't name the cause alone.
 - Fix: degseq. real vs degseq = clustering/mixing/communities. degseq vs ER = degree heterogeneity.
 - Degseq replaced `nx.configuration_model`: it collapses hub multi-edges, GitHub kmax 9458 → 5923, CV 5.27 → 4.09. Swaps keep degrees exact. One-time generation, networks stay static during simulation.
+- **Fixed 2026-10-07 (code review):** degseq/rewired graphs used to go through `clean()` (largest component only). Swaps cut off a few tiny pieces (mostly two degree-1 nodes linked together), so nodes were dropped: LastFM 48–91 per rewiring, Twitch 12–26, Deezer 189, GitHub 40 → degrees not exact. Now every node kept (a few tiny separate pieces, no isolated nodes), `make_degseq` asserts the degree sequence equals the real one. All degseq/rewired files rebuilt.
+- Graph files written to `.tmp` then renamed: stopping during a build leaves no half-written graph.
 - Degseq/ER/BA/WS take largest component → lose 0–1% nodes (deezer, lastfm most).
 - BA ⟨k⟩ off (m integer): deezer 6.0 vs 6.56, lastfm 8.0 vs 7.29, github 16.0 vs 15.3. WS ⟨k⟩ rounded to even. Use actual ⟨k⟩ from table, not target.
 - Degseq kills clustering mostly but not fully on hub graphs: GitHub 0.168 → 0.092 (hubs make triangles by degree alone).
@@ -62,7 +64,7 @@ Both: play weak PD with all neighbours each round. Synchronous. Mesa 3 has no `S
 
 - Classes: `FermiAgent`, `BMAgent` (both subclass `Player`), `CooperationModel`. Checks: `python src/test_model.py` (13 checks).
 - Update phase reads only frozen actions + payoffs, so in-place sequential updates = synchronous. No `next_strategy` buffer.
-- Fermi copies neighbour's *action* (= its strategy). BM initial p = `initial_coop` (0.5) for every node.
+- Fermi copies neighbour's *action* (= its strategy). BM initial p = `initial_coop` (0.5) for every node (as Ezaki et al. 2016). Note: mentor's `structure_test.py` and `validate_bm.py` use 0.8 (as Ezaki & Masuda 2017).
 - Cooperation recorded = fraction of C **actions played** that round, for both agents (comparable).
 - `record_from` = round index (0-based) from which per-node cooperation is counted. Own counter, because mesa's `steps` is already +1 inside `step()`.
 - Mesa 3.5: use `rng=` not `seed=` (deprecated). `model.random` still stdlib Random seeded from it.
@@ -72,21 +74,24 @@ Both: play weak PD with all neighbours each round. Synchronous. Mesa 3 has no `S
 
 Ezaki & Masuda 2017 setup: ring N=100, donation game c=1, β=0.2, A=1.0, ε=0.05, p0=0.8, 50 rounds, avg rounds 1–25, 1000 runs. Model has `game="donation"` option for this only.
 
+Re-run 2026-10-07 with the corrected ε (flip). Old ε rule (random pick) in brackets.
+
 | k | static − shuffled, b/c=2 | static − shuffled, b/c=6 |
 |---|---|---|
-| 2 | +0.008 | **+0.127** |
-| 4 | +0.003 | +0.062 |
-| 6 | +0.002 | +0.015 |
-| 8 | +0.002 | +0.005 |
+| 2 | +0.007 (+0.008) | **+0.084** (+0.127) |
+| 4 | +0.003 (+0.003) | +0.042 (+0.062) |
+| 6 | +0.002 (+0.002) | +0.020 (+0.015) |
+| 8 | +0.001 (+0.002) | +0.015 (+0.005) |
 
-- All 3 paper claims hold: reciprocity at b/c=6 k=2; none at b/c=2; gap shrinks with k.
+- All 3 paper claims hold under both ε rules: reciprocity at b/c=6 k=2; none at b/c=2; gap shrinks with k.
 - Paper gives no numbers in text → shape match only, not exact values. Figure: `results/validate_bm.png`.
 - Note for main study: BM *is* structure-sensitive here, at β=0.2 (not tiny). Fits H2.
 
 ### Bush–Mosteller (Ezaki et al. 2016)
 
 - State: p = cooperation propensity.
-- Action: C with prob (1−ε)p + ε/2. ε = 0.2 default (Ezaki).
+- Action: C with prob (1−ε)p + ε(1−p) = intended action flipped with prob ε (Ezaki & Masuda 2017: "submit the action opposite to the intention … with probability ε"). Main sweep ε = 0.05.
+- **Fixed 2026-10-07 (code review):** code had (1−ε)p + ε/2 (random pick with prob ε = flip with prob ε/2), so "ε=0.05" was really a 0.025 flip rate. Both pilots (`pilot_*_eps0.2.*`, `pilot_*_eps0.05.*`) and the first `validate_bm` ran with the old rule; main sweep uses the new one.
 - Payoff r = **average** over neighbours, ∈ [0, b].
 - Stimulus s = tanh(β(r − A)).
 - Update:
@@ -123,7 +128,7 @@ Three layers.
 | b | 1.1–2.0 | weak PD temptation |
 | β | large dense grid, log-spaced (e.g. 0.01 → 100) | key sweep, BM |
 | A | large dense grid across payoff range [0, b] | key sweep, BM. Avg payoff in weak PD ∈ [0, b] |
-| ε | 0.2 | BM, fixed |
+| ε | ~~0.2~~ 0.05 (flip) | BM, fixed |
 | κ | 0.1 | Fermi, fixed |
 | init | 50% C (Fermi), p = 0.5 (BM) | |
 | steps, reps | TBD | from pilot |
@@ -150,7 +155,7 @@ Figures: `results/pilot_heatmaps.png`, `results/pilot_curves.png`. Data: `result
 
 ## Fixes after code review (2026-10-07)
 
-- degseq in main sweep: rep r loads rewiring r % 5 (`<real>_rewired0..4`, seeds 1000+r). Results no longer hang on one random graph. No extra runs. Row column `source_graph` says which file was used. (`topology_table.csv` still lists the seed-42 degseq; rewirings have identical degrees, similar clustering.)
+- degseq in main sweep: rep r loads rewiring r % 5 (`<real>_rewired0..4`, seeds 1000+r). Results no longer hang on one random graph. No extra runs. Row column `source_graph` says which file was used. (`topology_table.csv` still lists the seed-42 degseq; rewirings have identical degrees, similar clustering. The regression uses that row for "<real>_degseq": fine for degree features, approximate for clustering/assortativity.)
 - Reps: ~~5 default, 20 in the high-β band~~ → **10 everywhere** (decided 2026-10-07). Band reps dropped: the "diverging seeds" there were a period-2 oscillation (see re-pilot section), not different end states. 12 β × 10 a × 5 b × 10 reps = 6000 runs per graph, 90,000 total, ≈ 7 h with `fast_model.py`.
 - analyze.py steps(): each comparison computed whenever its own pair exists (was: nothing without ER).
 - Timing: single-core measurements on this laptop vary 2–4× (e.g. 3 small networks × 3 types: 0.056 vs 0.093 s/step on different runs). Quote ranges, or benchmark actual parallel sweep jobs.
@@ -202,7 +207,7 @@ Fermi arms negligible (2 runs per b × rep vs 99 BM). 1000 steps instead of 1500
 - Parallel, real sweep jobs, 8 processes, 1500 steps (s per run, wall): Facebook/LastFM/Twitch 0.06–0.10, Deezer 0.31–0.43, GitHub 0.77–0.94. **Full sweep (15 graphs, 65,250 runs) ≈ 5 h** (Mesa estimate was 155–350 h). With 10 reps everywhere (90,000 runs) ≈ 7 h.
 - Caveat: runs left in background / laptop idle got 10–300× slower (Windows throttling or sleep). Run the sweep in an open terminal, plugged in, sleep off.
 - `model.py` (Mesa) stays the readable reference + used by tests, validation, pilot, Fermi.
-- `src/check_fast_model.py` → `results/fast_model_check.csv`. Exact: payoffs (7624 players) and BM update (38120 updates, 5 β) identical to Mesa. Statistical: 7 cells × 20 seeds × 600 steps on LastFM (incl. shuffled, β up to 100): all agree, |diff| ≤ 0.0005.
+- `src/check_fast_model.py` → `results/fast_model_check.csv`. Exact: payoffs (7624 players) and BM update (38120 updates, 5 β) identical to Mesa. Statistical: 7 cells × 20 seeds × 600 steps on LastFM (incl. shuffled, β up to 100): all agree, |diff| ≤ 0.0005. Re-run with corrected ε: 7/7 agree, |diff| ≤ 0.0002.
 - Same seed ≠ same run in the two versions (random numbers drawn differently).
 
 ## Still open

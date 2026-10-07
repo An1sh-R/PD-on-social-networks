@@ -84,11 +84,17 @@ def make_degseq(G_real, seed=SEED):
 
     Done once to generate a fixed graph. (nx.configuration_model was tried first,
     but it loses hub edges on heavy-tailed graphs.)
+    Not passed through clean(): swaps can cut off a few tiny pieces (mostly two
+    degree-1 nodes linked to each other). Keeping only the largest piece would drop
+    those nodes and break the exact degree sequence, so we keep every node.
     """
     G = G_real.copy()
     nswap = 10 * G.number_of_edges()
     nx.double_edge_swap(G, nswap=nswap, max_tries=100 * nswap, seed=seed)
-    return clean(G)
+    real_degrees = sorted(d for _, d in G_real.degree())
+    new_degrees = sorted(d for _, d in G.degree())
+    assert new_degrees == real_degrees, "degree sequence changed"
+    return G
 
 
 # Structure test (structure_test.py) uses 5 independent degree-preserving
@@ -141,14 +147,21 @@ def load_graph(name):
         print(f"building {name}")
         G = make_synthetic(real_name, load_real(real_name), kind)
         os.makedirs(SYNTH_DIR, exist_ok=True)
-        nx.write_edgelist(G, path, data=False)
+        # write to a temporary file, then rename: if the program is stopped while
+        # writing, no half-written graph file is left behind to be loaded later
+        temp_path = path + ".tmp"
+        nx.write_edgelist(G, temp_path, data=False)
+        os.replace(temp_path, path)
     return nx.read_edgelist(path, nodetype=int)
 
 
-def check_graph(G):
-    """Sanity checks every graph must pass before simulation."""
+def check_graph(G, must_be_connected=True):
+    """Sanity checks every graph must pass before simulation.
+    Degree-preserving shuffles may have a few tiny separate pieces (see make_degseq)."""
     assert nx.number_of_selfloops(G) == 0, "self-loops present"
-    assert nx.is_connected(G), "graph not connected"
+    if must_be_connected:
+        assert nx.is_connected(G), "graph not connected"
+    assert nx.number_of_isolates(G) == 0, "node with no neighbours"
     assert sorted(G.nodes()) == list(range(G.number_of_nodes())), "node labels not 0..n-1"
 
 
@@ -173,7 +186,7 @@ def build_table():
     rows = []
     for name in all_names():
         G = load_graph(name)
-        check_graph(G)
+        check_graph(G, must_be_connected=not name.endswith("_degseq"))
         rows.append(topology_metrics(G, name))
         print(f"done {name}")
     return pd.DataFrame(rows)

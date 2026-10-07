@@ -86,8 +86,9 @@ class BMAgent(Player):
 
     def choose_action(self):
         eps = self.model.epsilon
-        # With probability eps the player slips and picks C or D at random.
-        prob_cooperate = (1 - eps) * self.p + eps * 0.5
+        # With probability eps the player slips and plays the opposite of what it
+        # intended (Ezaki & Masuda 2017): intends C with prob p, then flips.
+        prob_cooperate = (1 - eps) * self.p + eps * (1 - self.p)
         if self.model.random.random() < prob_cooperate:
             self.action = "C"
         else:

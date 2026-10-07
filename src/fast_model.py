@@ -57,8 +57,9 @@ def run_bm(A, degree, b, beta, aspiration, epsilon, steps, record_from=0,
     curve = np.zeros(steps)
 
     for t in range(steps):
-        # with probability epsilon the player slips and picks C or D at random
-        prob_cooperate = (1 - epsilon) * p + epsilon * 0.5
+        # with probability epsilon the player slips and plays the opposite of what it
+        # intended (Ezaki & Masuda 2017)
+        prob_cooperate = (1 - epsilon) * p + epsilon * (1 - p)
         coop = rng.random(n) < prob_cooperate
         payoff = weak_pd_payoffs(A, degree, coop, b)
 

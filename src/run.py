@@ -39,7 +39,7 @@ TEST = "--test" in sys.argv
 # ---- grid ------------------------------------------------------------------
 # Decided: epsilon 0.05, b = 1.1-2.0, full beta x a grid, 10 reps everywhere.
 if TEST:
-    # 8 graphs: enough for analyze.py to test its regression and real/degseq/er steps
+    # 10 graphs: enough for analyze.py to test its regression and real/degseq/er steps
     GRAPHS = ["lastfm", "lastfm_er", "lastfm_ba", "lastfm_ws", "lastfm_degseq",
               "lastfm_shuffled", "twitch", "twitch_er", "twitch_degseq", "twitch_shuffled"]
     BETAS = [0.1, 10.0]
@@ -70,7 +70,7 @@ else:
     OUT_NAME = "sweep"
 
 RUN_FERMI = False  # BM only for now; Fermi baseline later (set True, rerun: done runs are skipped)
-EPSILON = 0.05  # as Ezaki & Masuda 2017; 0.2 squeezed cooperation into [0.1, 0.9]
+EPSILON = 0.05  # slip = flip the intended action, as Ezaki & Masuda 2017
 KAPPA = 0.1
 # 8 processes on this 10-core laptop: full sweep ~5 h with fast_model (measured 2026-10-07).
 N_PROCESSES = 8
@@ -221,7 +221,7 @@ def run_one(job):
         "cooperation": float(window.mean()),
         "cooperation_std": float(window.std()),
         # second half of the window minus first half: ~0 if the run had settled,
-        # big if it was still moving (tells slow convergence from bistability)
+        # big if it was still moving (slow convergence: longer runs needed)
         "drift": float(window[WINDOW // 2:].mean() - window[:WINDOW // 2].mean()),
         # every-other-round cooperation gap: big if the whole population flips C <-> D
         # each round (period-2 oscillation, high beta). The mean above hides it.
@@ -240,6 +240,14 @@ def run_one(job):
 def node_file_name(run_id):
     # run_id has | and = which are awkward in file names
     return run_id.replace("|", "__").replace("=", "-") + ".npy"
+
+
+def save_node_file(run_id, node_values):
+    """Save to a temporary file, then rename: a crash never leaves a half-written file."""
+    path = os.path.join(NODES_DIR, node_file_name(run_id))
+    temp_path = path[:-len(".npy")] + "_tmp.npy"  # np.save adds .npy if missing
+    np.save(temp_path, node_values)
+    os.replace(temp_path, path)
 
 
 # ---- main ------------------------------------------------------------------
@@ -292,11 +300,14 @@ def main():
             writer.writeheader()
         with Pool(N_PROCESSES) as pool:
             for i, (row, node_values) in enumerate(pool.imap_unordered(run_one, todo)):
-                writer.writerow(row)
-                f.flush()  # written to disk now, so a crash loses nothing
+                # node file first: the CSV row marks the run as done. A crash in between
+                # just means the run is redone (and its node file overwritten).
                 if node_values is not None:
-                    np.save(os.path.join(NODES_DIR, node_file_name(row["run_id"])), node_values)
+                    save_node_file(row["run_id"], node_values)
+                writer.writerow(row)
+                f.flush()  # hand the row to Windows right away
                 if (i + 1) % 20 == 0 or i + 1 == len(todo):
+                    os.fsync(f.fileno())  # make sure it is on disk (power cut loses < 20 runs)
                     minutes = (time.time() - start) / 60
                     left = minutes / (i + 1) * (len(todo) - i - 1)
                     print(f"  {i + 1}/{len(todo)} done, {minutes:.1f} min so far, ~{left:.0f} min left")
