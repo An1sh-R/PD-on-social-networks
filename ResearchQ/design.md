@@ -154,7 +154,8 @@ Figures: `results/pilot_heatmaps.png`, `results/pilot_curves.png`. Data: `result
 - Reps: 5 default, **20 in the high-β band** (β ≥ 3 and a = 0.6–0.8), fixed before the sweep. Reason: pilot seeds diverge there (e.g. 0.16 / 0.76 / 0.80); SE of mean ≈ 0.16 with 5 reps vs 0.08 with 20. Grid as written: 510 cells × 5 + 90 cells × 20 = 4350 runs per graph (+45% vs flat 5 reps).
 - analyze.py steps(): each comparison computed whenever its own pair exists (was: nothing without ER).
 - Timing: single-core measurements on this laptop vary 2–4× (e.g. 3 small networks × 3 types: 0.056 vs 0.093 s/step on different runs). Quote ranges, or benchmark actual parallel sweep jobs.
-- Still open: GRAPHS (currently all 30), whether to drop β=0.01 (still drifting at 1000 steps) and a=0.9 (dead zone).
+- **Decided:** GRAPHS = real, degseq, shuffled for all 5 networks (15 graphs, no ER/BA/WS). Order: facebook, lastfm, twitch, deezer, github, so small networks finish first. β=0.01 and a=0.9 kept (flag in analysis: β=0.01 not settled at 1000 steps; a=0.9 dead zone). 4350 runs per graph, 65,250 total.
+- Consequence: no degseq − ER step; regression has only 10 topologies (real + degseq × 5) for 4 features → weak, treat as descriptive.
 
 ## Cost of main sweep (measured 2026-10-07)
 

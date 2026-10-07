@@ -33,7 +33,7 @@ from networks import REAL_FILES, RESULTS_DIR, all_names, load_graph, rewired_nam
 TEST = "--test" in sys.argv
 
 # ---- grid ------------------------------------------------------------------
-# Decided: epsilon 0.05, b = 1.1-2.0 (5 values). TODO: grid density / budget.
+# Decided: epsilon 0.05, b = 1.1-2.0, full beta x a grid, 5 reps (20 in high-beta band).
 if TEST:
     # 8 graphs: enough for analyze.py to test its regression and real/degseq/er steps
     GRAPHS = ["lastfm", "lastfm_er", "lastfm_ba", "lastfm_ws", "lastfm_degseq",
@@ -47,9 +47,15 @@ if TEST:
     WINDOW = 20
     OUT_NAME = "sweep_test"
 else:
-    GRAPHS = all_names()  # 5 real + 20 synthetic
-    for real_name in REAL_FILES:
+    # Decided 2026-10-07: real, degseq, shuffled only (no ER/BA/WS). Small networks
+    # first, so their results are complete before the slow GitHub/Deezer runs.
+    NETWORK_ORDER = ["facebook", "lastfm", "twitch", "deezer", "github"]
+    GRAPHS = []
+    for real_name in NETWORK_ORDER:
+        GRAPHS.append(real_name)
+        GRAPHS.append(real_name + "_degseq")
         GRAPHS.append(real_name + "_shuffled")
+    # kept on purpose: beta=0.01 still drifts at 1000 steps, a=0.9 is the dead zone (flag in analysis)
     BETAS = [0.01, 0.1, 0.3, 0.6, 1.0, 2.0, 3.0, 5.0, 10.0, 20.0, 30.0, 100.0]
     A_FRACTIONS = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
     TEMPTATIONS = [1.1, 1.3, 1.5, 1.7, 2.0]
@@ -269,8 +275,12 @@ def main():
     for job in all_jobs:
         if job["run_id"] not in done:
             todo.append(job)
-    # same graph file next to each other: workers then mostly reuse their loaded graph
-    todo.sort(key=lambda job: job["source_graph"])
+    # keep GRAPHS order (small networks first); inside a graph, same file next to
+    # each other so workers mostly reuse their loaded graph
+    graph_position = {}
+    for i, graph in enumerate(GRAPHS):
+        graph_position[graph] = i
+    todo.sort(key=lambda job: (graph_position[job["graph"]], job["source_graph"]))
     print(f"{len(all_jobs)} runs in sweep, {len(done)} already done, {len(todo)} to go")
     if not todo:
         return
