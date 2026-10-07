@@ -11,6 +11,7 @@ Research project: BM aspiration learning vs Fermi imitation on real networks. Qu
 - Undergrad-readable. Plain loops, plain functions, descriptive names.
 - No clever one-liners, no nested comprehensions, no metaprogramming, no fancy abstractions.
 - Libraries: mesa + networkx for simulation. numpy/pandas/matplotlib ok for data and plots. Nothing exotic.
+- Exception (decided 2026-10-07): main sweep BM runs use numpy (`fast_model.py`) for speed. Mesa model stays the reference; any rule change goes in both, then rerun `check_fast_model.py`.
 - Short comments saying why, not what.
 - Pin mesa version in requirements.txt. Use a venv (Python 3.12+, `py -3.14 -m venv .venv`).
 - Run scripts from project root: `python src/networks.py`.
@@ -26,7 +27,9 @@ Experimentation/
   src/              ALL code lives here, flat, no subfolders
     networks.py       load, clean, synthetic equivalents, topology metrics   [done]
     plot_graphs.py    draw each real graph + synthetic equivalents -> graphs/ [done]
-    model.py          mesa agents (BM, Fermi) + model                         [done]
+    model.py          mesa agents (BM, Fermi) + model = readable reference    [done]
+    fast_model.py     numpy BM, same rules, ~10-20x faster, used by run.py    [done]
+    check_fast_model.py  fast_model vs model: exact + 20-seed comparison      [done]
     test_model.py     simple asserts for model.py (python src/test_model.py)  [done]
     validate_bm.py    BM vs Ezaki & Masuda 2017 rings -> results/            [done]
     pilot.py          coarse BM beta x A x b scan on LastFM -> results/       [done]

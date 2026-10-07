@@ -7,7 +7,7 @@ Run from project root:
 Safe to stop any time: every finished run is written straight to the CSV, and a
 restart skips runs already in it.
 
-Graphs: 5 real + 20 synthetic (er, ba, ws, degseq) + 5 "shuffled".
+Graphs: for each of the 5 real networks: real, degseq, shuffled (see GRAPHS).
 "<real>_shuffled" = the real graph, but players get new random seats after every
 round (mentor's idea): same network, no fixed partners.
 
@@ -18,6 +18,9 @@ Arms (see ResearchQ/design.md):
 
 Aspiration is given as a fraction of b (A = a * b): the pilot showed the
 interesting band moves with b.
+
+BM runs use the numpy version (fast_model.py, ~10-20x faster). Fermi still uses
+the Mesa model (model.py). check_fast_model.py checks numpy against Mesa.
 """
 import csv
 import os
@@ -27,6 +30,7 @@ from multiprocessing import Pool
 
 import numpy as np
 
+from fast_model import neighbour_matrix, run_bm
 from model import CooperationModel
 from networks import REAL_FILES, RESULTS_DIR, all_names, load_graph, rewired_names
 
@@ -68,7 +72,7 @@ else:
 RUN_FERMI = False  # BM only for now; Fermi baseline later (set True, rerun: done runs are skipped)
 EPSILON = 0.05  # as Ezaki & Masuda 2017; 0.2 squeezed cooperation into [0.1, 0.9]
 KAPPA = 0.1
-# 8 processes on this 10-core laptop give ~3x speed-up over 1 (not 8x: cores share memory).
+# 8 processes on this 10-core laptop: full sweep ~5 h with fast_model (measured 2026-10-07).
 N_PROCESSES = 8
 N_BUILD_PROCESSES = 3  # building rewired graphs needs more memory per process
 
@@ -164,14 +168,17 @@ def finished_run_ids():
 # every worker would use several GB of memory.
 cached_name = None
 cached_graph = None
+cached_matrix = None  # (A, degree) for the numpy BM model
 
 
 def get_graph(name):
-    global cached_name, cached_graph
+    """Returns the networkx graph and its (A, degree) neighbour matrix."""
+    global cached_name, cached_graph, cached_matrix
     if name != cached_name:
         cached_graph = load_graph(name)
+        cached_matrix = neighbour_matrix(cached_graph)
         cached_name = name
-    return cached_graph
+    return cached_graph, cached_matrix
 
 
 def graph_type(name):
@@ -182,33 +189,28 @@ def graph_type(name):
 
 def run_one(job):
     start = time.time()
-    G = get_graph(job["source_graph"])
+    G, (A, degree) = get_graph(job["source_graph"])
     record_from = STEPS - WINDOW
     shuffle = job["graph"].endswith("_shuffled")
 
     if job["agent"] == "bm":
         aspiration = round(job["a_fraction"] * job["b"], 6)  # avoid 0.44999999999999996
-        model = CooperationModel(G, "bm", b=job["b"], beta=job["beta"],
-                                 aspiration=aspiration, epsilon=EPSILON,
-                                 record_from=record_from, shuffle_seats=shuffle,
-                                 seed=job["rep"])
+        curve, p, node_cooperation = run_bm(A, degree, job["b"], job["beta"], aspiration,
+                                            EPSILON, STEPS, record_from=record_from,
+                                            shuffle_seats=shuffle, seed=job["rep"])
+        mean_p = float(p.mean())
     else:
         aspiration = "-"
         scheme = job["agent"].replace("fermi_", "")
         model = CooperationModel(G, "fermi", b=job["b"], payoff_scheme=scheme,
                                  kappa=KAPPA, record_from=record_from,
                                  shuffle_seats=shuffle, seed=job["rep"])
-    model.run(STEPS)
-
-    curve = model.datacollector.model_vars["cooperation"]
-    window = np.array(curve[record_from:])
-    if job["agent"] == "bm":
-        p_values = []
-        for player in model.players:
-            p_values.append(player.p)
-        mean_p = float(np.mean(p_values))
-    else:
+        model.run(STEPS)
+        curve = model.datacollector.model_vars["cooperation"]
+        node_cooperation = model.node_cooperation()
         mean_p = "-"
+
+    window = np.array(curve[record_from:])
 
     row = {
         "run_id": job["run_id"],
@@ -237,7 +239,7 @@ def run_one(job):
     # Per-node cooperation: real graphs, first rep only (keeps disk use small).
     node_values = None
     if job["graph"] in REAL_FILES and job["rep"] == 0:
-        node_values = np.array(model.node_cooperation(), dtype=np.float32)
+        node_values = np.array(node_cooperation, dtype=np.float32)
     return row, node_values
 
 

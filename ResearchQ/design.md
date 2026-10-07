@@ -180,7 +180,9 @@ Fermi arms negligible (2 runs per b × rep vs 99 BM). 1000 steps instead of 1500
 - Range now 0.06–0.82 (was 0.19–0.69). ε=0.05 gives real room.
 - β ≤ 0.3: still flat across β (weak-learning regime), but slow: β=0.01, A=0 still drifting at step 1000 (0.22 and falling). A=0 → every payoff satisfies → slow drift.
 - Dead zone A ≳ 0.8b remains (coop ≈ 0.5).
-- **Bistability** at high β (3–30), A ≈ 0.65–0.8b, larger b. Reps end in different states: β=10, A=1.5, b=1.9 → 0.16 vs 0.76 vs 0.80, still separating at step 1000. Outcome depends on early random history. Mean of reps misleading here → report distribution, need many reps (≥20), longer runs.
+- ~~Bistability~~ **WRONG, corrected 2026-10-07**: at high β, A ≈ 0.65–0.8b the pilot saw reps at 0.16 / 0.76 / 0.80. Real cause = **period-2 oscillation**: whole population flips C↔D every round (seed 0 at steps 990–999: 0.167, 0.808, 0.163, 0.812 …). Pilot saved every 10th step = even steps only → saw one phase; seeds differ only in phase. Mean over all steps ≈ 0.487 for every seed. Main sweep averages every step → fine.
+- Oscillation map (numpy, LastFM, 3 seeds, last 500 of 1000 steps, |even − odd| mean): none at b=1.1 or β ≤ 2 (bar few b=2 cells); present for b ≥ 1.5, β ≥ 3, a ≈ 0.6–0.9 (A > 1 = max cooperator payoff), gap up to 0.3–0.58. Means there ≈ 0.49.
+- Likely synchronous-update effect (everyone reacts to the same round at once, high β → near-full flips). Open: record it per run, mention in paper.
 - Elsewhere: plateau by 300–600 steps, rep spread ≤ 0.01.
 - Implication for structure test: β=0.5 sits in the flat regime → likely "no structure effect" there. Interesting regime is high β.
 
@@ -191,6 +193,16 @@ Fermi arms negligible (2 runs per b × rep vs 99 BM). 1000 steps instead of 1500
 - Main sweep cost, all 25 graphs, 1000 steps: ≈ 5 min per (β, a, b, rep) setting. 400 settings ≈ 35 h, 1200 ≈ 100 h, 1920 ≈ 160 h. Cut options: 800 steps, 3 reps off the ridge, fewer graphs.
 - `src/run.py`: arms bm / fermi_average / fermi_accumulated. A = a·b. One CSV row per run (`results/sweep_runs.csv`), written immediately; restart skips done runs, drops cut-off last line. Per-node cooperation saved for real graphs, rep 0 only (`results/sweep_nodes/*.npy`, gitignored). `--test` = tiny grid.
 - Run budget still needs a pilot: rough 25 graphs × 3 arms × β × b × A × reps. Decide sizes after pilot. Multiprocessing if needed.
+
+## Numpy engine for the sweep (decided 2026-10-07)
+
+- `src/fast_model.py`: same BM rules as `model.py`, but all players in arrays. Payoffs = one sparse matrix product (`A @ coop`), BM update = `np.where` over the four cases, shuffled seats = permute p (and per-player counts) each round. networkx still builds every graph; only gives A once per graph.
+- Measured single core, 200 steps: LastFM 0.94 → 0.045 s (21×), Facebook 1.11 → 0.11 s (10×), GitHub 6.6 → 0.49 s (13×).
+- Parallel, real sweep jobs, 8 processes, 1500 steps (s per run, wall): Facebook/LastFM/Twitch 0.06–0.10, Deezer 0.31–0.43, GitHub 0.77–0.94. **Full sweep (15 graphs, 65,250 runs) ≈ 5 h** (Mesa estimate was 155–350 h).
+- Caveat: runs left in background / laptop idle got 10–300× slower (Windows throttling or sleep). Run the sweep in an open terminal, plugged in, sleep off.
+- `model.py` (Mesa) stays the readable reference + used by tests, validation, pilot, Fermi.
+- `src/check_fast_model.py` → `results/fast_model_check.csv`. Exact: payoffs (7624 players) and BM update (38120 updates, 5 β) identical to Mesa. Statistical: 7 cells × 20 seeds × 600 steps on LastFM (incl. shuffled, β up to 100): all agree, |diff| ≤ 0.0005.
+- Same seed ≠ same run in the two versions (random numbers drawn differently).
 
 ## Still open
 
