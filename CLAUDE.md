@@ -33,7 +33,7 @@ Experimentation/
     run.py            parameter sweep -> results/ (--test = tiny grid)        [done]
     structure_test.py mentor design: original vs rewired vs shuffled seats  [done]
     structure_summary.py  Welch CIs, +/-0.01 equivalence verdict, figures     [done]
-    analyze.py        stats + figures
+    analyze.py        main sweep: sensitivity, real/degseq/ER steps, regression, node level [done]
   graphs/           network drawings (one png per real graph)
   results/          csv, result figures
 ```

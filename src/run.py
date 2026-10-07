@@ -31,7 +31,9 @@ TEST = "--test" in sys.argv
 # ---- grid ------------------------------------------------------------------
 # Decided: epsilon 0.05, b = 1.1-2.0 (5 values). TODO: grid density / budget.
 if TEST:
-    GRAPHS = ["lastfm", "lastfm_er"]
+    # 8 graphs: enough for analyze.py to test its regression and real/degseq/er steps
+    GRAPHS = ["lastfm", "lastfm_er", "lastfm_ba", "lastfm_ws", "lastfm_degseq",
+              "twitch", "twitch_er", "twitch_degseq"]
     BETAS = [0.1, 10.0]
     A_FRACTIONS = [0.3, 0.6]
     TEMPTATIONS = [1.5]
