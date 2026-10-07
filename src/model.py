@@ -155,6 +155,11 @@ class CooperationModel(mesa.Model):
         self.rounds_counted = 0
         self.G = G
         self.shuffle_seats = shuffle_seats
+        # Neighbour lists looked up once: re-seating every round would otherwise
+        # ask networkx for them again each round (slow on big graphs).
+        self.neighbor_nodes = []
+        for node in range(G.number_of_nodes()):
+            self.neighbor_nodes.append(list(G.neighbors(node)))
 
         # One player per node. Node ids are 0..n-1 so list index = node id.
         self.players = []
@@ -195,9 +200,8 @@ class CooperationModel(mesa.Model):
 
     def seat_players(self, order):
         """order[node] = player sitting on that node. Sets everyone's neighbour list."""
-        for node in range(self.G.number_of_nodes()):
-            neighbor_nodes = list(self.G.neighbors(node))
-            order[node].neighbors = [order[v] for v in neighbor_nodes]
+        for node in range(len(order)):
+            order[node].neighbors = [order[v] for v in self.neighbor_nodes[node]]
 
     def run(self, n_steps):
         for _ in range(n_steps):

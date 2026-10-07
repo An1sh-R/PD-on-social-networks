@@ -148,6 +148,22 @@ Figures: `results/pilot_heatmaps.png`, `results/pilot_curves.png`. Data: `result
 - analyze.py: shuffled excluded from sensitivity + regression (not a new topology); new step real − shuffled = fixed-partner effect, next to real − degseq and degseq − ER.
 - `structure_test.py` / `structure_summary.py` = mentor's standalone version (β fixed 0.5). Superseded by the main sweep; kept for reference.
 
+## Cost of main sweep (measured 2026-10-07)
+
+- Memory: < 0.2 GB Python objects per worker, even GitHub. 8 workers OK.
+- One step on all 30 graphs: ~1.4 s (20 graphs without BA/WS: ~1.06 s). Slowest: github_shuffled 0.27 s, github_ws 0.14 s, deezer_shuffled 0.13 s. Shuffled 2–5× slower than static.
+- One (β, a, b, rep) setting, 1500 steps, 8 processes (~3× speed-up): ~12 min (30 graphs), ~9 min (20 graphs).
+
+| Grid | Settings | 30 graphs | 20 graphs |
+|---|---|---|---|
+| 12 β × 10 a × 5 b × 5 reps (as written) | 3000 | ~600 h | ~450 h |
+| 11 β × 9 a × 5 b × 5 reps (drop β=0.01, a=0.9) | 2475 | ~495 h | ~370 h |
+| 11 × 9 × 5 × 3 reps | 1485 | ~300 h | ~225 h |
+| 11 × 9 × 3 b × 3 reps | 891 | ~180 h | ~135 h |
+| 8 β × 7 a × 3 b × 3 reps | 504 | ~100 h | ~75 h |
+
+Fermi arms negligible (2 runs per b × rep vs 99 BM). 1000 steps instead of 1500 → ×0.67.
+
 ## Re-pilot, ε = 0.05 (`results/pilot_*_eps0.05.*`, same grid)
 
 - Range now 0.06–0.82 (was 0.19–0.69). ε=0.05 gives real room.

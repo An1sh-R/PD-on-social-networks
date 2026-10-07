@@ -19,8 +19,11 @@ How does topology sensitivity of Bush–Mosteller (BM) aspiration learning chang
 - H2: sensitivity grows with β (BM drifts from theory).
 - H3: Fermi sensitive at all κ.
 - H4: features beyond degree sequence (clustering, communities, assortativity) explain the growth.
+- H5 (mentor's shuffled seats): fixed partners matter more for Fermi than BM. Re-seating every round should wipe out Fermi cooperation (imitation needs stable clusters) but hurt BM less, mainly at low β. At high β, BM partner effect may grow (fits Ezaki & Masuda 2017 network reciprocity).
 
 ## Design sketch
+
+(Up to date version: `design.md`. Three comparisons per real graph: real vs shuffled seats = fixed partners; real vs degseq = structure beyond degree; degseq vs ER = degree heterogeneity.)
 
 - Networks: SNAP ego-Facebook, email-Eu-core, ca-GrQc. Clean first: drop self-loops, keep largest component.
 - Null models per real network: degree-preserving rewire → + assortativity → + clustering → + communities. Each step isolates one feature.
