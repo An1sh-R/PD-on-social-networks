@@ -7,6 +7,10 @@ Run from project root:
 Safe to stop any time: every finished run is written straight to the CSV, and a
 restart skips runs already in it.
 
+Graphs: 5 real + 20 synthetic (er, ba, ws, degseq) + 5 "shuffled".
+"<real>_shuffled" = the real graph, but players get new random seats after every
+round (mentor's idea): same network, no fixed partners.
+
 Arms (see ResearchQ/design.md):
 - bm                 Bush-Mosteller, full beta x aspiration grid
 - fermi_average      Fermi imitation, average payoff (fair comparison with BM)
@@ -33,7 +37,7 @@ TEST = "--test" in sys.argv
 if TEST:
     # 8 graphs: enough for analyze.py to test its regression and real/degseq/er steps
     GRAPHS = ["lastfm", "lastfm_er", "lastfm_ba", "lastfm_ws", "lastfm_degseq",
-              "twitch", "twitch_er", "twitch_degseq"]
+              "lastfm_shuffled", "twitch", "twitch_er", "twitch_degseq", "twitch_shuffled"]
     BETAS = [0.1, 10.0]
     A_FRACTIONS = [0.3, 0.6]
     TEMPTATIONS = [1.5]
@@ -43,12 +47,14 @@ if TEST:
     OUT_NAME = "sweep_test"
 else:
     GRAPHS = all_names()  # 5 real + 20 synthetic
+    for real_name in REAL_FILES:
+        GRAPHS.append(real_name + "_shuffled")
     BETAS = [0.01, 0.1, 0.3, 0.6, 1.0, 2.0, 3.0, 5.0, 10.0, 20.0, 30.0, 100.0]
     A_FRACTIONS = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
     TEMPTATIONS = [1.1, 1.3, 1.5, 1.7, 2.0]
     REPS = 5
-    STEPS = 1000
-    WINDOW = 400  # final cooperation = mean over the last 400 steps (pilot: flat by ~600)
+    STEPS = 1500
+    WINDOW = 500  # final cooperation = mean over the last 500 steps (eps=0.05 pilot: most flat by ~600)
     OUT_NAME = "sweep"
 
 EPSILON = 0.05  # as Ezaki & Masuda 2017; 0.2 squeezed cooperation into [0.1, 0.9]
@@ -126,6 +132,8 @@ cached_graph = None
 
 def get_graph(name):
     global cached_name, cached_graph
+    if name.endswith("_shuffled"):
+        name = name[:-len("_shuffled")]  # shuffled runs use the real graph
     if name != cached_name:
         cached_graph = load_graph(name)
         cached_name = name
@@ -142,17 +150,20 @@ def run_one(job):
     start = time.time()
     G = get_graph(job["graph"])
     record_from = STEPS - WINDOW
+    shuffle = job["graph"].endswith("_shuffled")
 
     if job["agent"] == "bm":
         aspiration = round(job["a_fraction"] * job["b"], 6)  # avoid 0.44999999999999996
         model = CooperationModel(G, "bm", b=job["b"], beta=job["beta"],
                                  aspiration=aspiration, epsilon=EPSILON,
-                                 record_from=record_from, seed=job["rep"])
+                                 record_from=record_from, shuffle_seats=shuffle,
+                                 seed=job["rep"])
     else:
         aspiration = "-"
         scheme = job["agent"].replace("fermi_", "")
         model = CooperationModel(G, "fermi", b=job["b"], payoff_scheme=scheme,
-                                 kappa=KAPPA, record_from=record_from, seed=job["rep"])
+                                 kappa=KAPPA, record_from=record_from,
+                                 shuffle_seats=shuffle, seed=job["rep"])
     model.run(STEPS)
 
     curve = model.datacollector.model_vars["cooperation"]

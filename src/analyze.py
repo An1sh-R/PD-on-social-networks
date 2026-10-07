@@ -1,10 +1,12 @@
 """Analyse the main sweep (run src/run.py first). Answers: how does the topology
 sensitivity of BM change with beta, and which network features drive it?
 
-1. Sensitivity   spread (std) of cooperation across all graphs, per condition
-2. Steps         real - degseq   (structure beyond the degree sequence)
+1. Sensitivity   spread (std) of cooperation across all topologies, per condition
+                 ("shuffled" runs are left out: same topology as the real graph)
+2. Steps         real - shuffled (fixed partners: mentor's re-seating test)
+                 real - degseq   (structure beyond the degree sequence)
                  degseq - er     (degree heterogeneity)
-3. Regression    cooperation ~ standardised graph features, across graphs
+3. Regression    cooperation ~ standardised graph features, across topologies
 4. Node level    per-node cooperation vs degree and local clustering (real graphs)
 
 BM is plotted against beta (averaged over aspiration), one line per b.
@@ -75,7 +77,8 @@ def plot_vs_beta(ax, table, value, ylabel):
 
 def sensitivity(means):
     keys = ["agent", "b", "beta", "a_fraction"]
-    table = means.groupby(keys, as_index=False)["cooperation"].agg(["std", "mean", "count"])
+    topologies = means[means["graph_type"] != "shuffled"]
+    table = topologies.groupby(keys, as_index=False)["cooperation"].agg(["std", "mean", "count"])
     table = table.rename(columns={"std": "sensitivity", "mean": "mean_coop", "count": "n_graphs"})
     table.to_csv(out_path("_sensitivity.csv"), index=False)
 
@@ -121,6 +124,10 @@ def steps(means):
             row = dict(zip(keys, key))
             row["structure_effect"] = by_type["real"] - by_type["degseq"]
             row["degree_effect"] = by_type["degseq"] - by_type["er"]
+            if "shuffled" in by_type:
+                row["partner_effect"] = by_type["real"] - by_type["shuffled"]
+            else:
+                row["partner_effect"] = np.nan
             rows.append(row)
     if not rows:
         print("steps: no family has real + degseq + er, skipped")
@@ -128,14 +135,16 @@ def steps(means):
     table = pd.DataFrame(rows)
     table.to_csv(out_path("_steps.csv"), index=False)
 
-    fig, axes = plt.subplots(1, 2, figsize=(13, 4.5), sharey=True)
-    plot_vs_beta(axes[0], table, "structure_effect", "cooperation difference (mean over families)")
-    axes[0].set_title("real - degseq: structure beyond degree")
-    plot_vs_beta(axes[1], table, "degree_effect", "")
-    axes[1].set_title("degseq - ER: degree heterogeneity")
+    fig, axes = plt.subplots(1, 3, figsize=(19, 4.5), sharey=True)
+    plot_vs_beta(axes[0], table, "partner_effect", "cooperation difference (mean over families)")
+    axes[0].set_title("real - shuffled: fixed partners")
+    plot_vs_beta(axes[1], table, "structure_effect", "")
+    axes[1].set_title("real - degseq: structure beyond degree")
+    plot_vs_beta(axes[2], table, "degree_effect", "")
+    axes[2].set_title("degseq - ER: degree heterogeneity")
     for ax in axes:
         ax.axhline(0, color="black", linewidth=0.5)
-    axes[1].legend(fontsize=7)
+    axes[2].legend(fontsize=7)
     fig.savefig(out_path("_steps.png"), dpi=150, bbox_inches="tight")
     plt.close(fig)
     return table

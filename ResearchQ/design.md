@@ -141,6 +141,13 @@ Figures: `results/pilot_heatmaps.png`, `results/pilot_curves.png`. Data: `result
 - Ridge: β ≥ 10, A ≈ 0.65b. Reps diverge (e.g. 0.41 vs 0.54) and drift for hundreds of steps. Real slow/metastable dynamics, not noise. Std between reps up to 0.08; elsewhere ≤ 0.01.
 - "Steps to plateau" heatmap overstates (tolerance 0.02 vs noise ~0.01–0.02). Block means used instead.
 
+## Shuffled seats in main sweep (decided 2026-10-07)
+
+- Mentor's idea folded into `run.py`: graph type `shuffled` = real graph, players re-seated every round (no fixed partners). 30 graphs total: 5 real + 20 synthetic + 5 shuffled. All arms (BM + both Fermi).
+- Wide β × A grid kept. Runs 1500 steps, final = mean of last 500.
+- analyze.py: shuffled excluded from sensitivity + regression (not a new topology); new step real − shuffled = fixed-partner effect, next to real − degseq and degseq − ER.
+- `structure_test.py` / `structure_summary.py` = mentor's standalone version (β fixed 0.5). Superseded by the main sweep; kept for reference.
+
 ## Re-pilot, ε = 0.05 (`results/pilot_*_eps0.05.*`, same grid)
 
 - Range now 0.06–0.82 (was 0.19–0.69). ε=0.05 gives real room.
