@@ -37,18 +37,17 @@ from networks import REAL_FILES, RESULTS_DIR, all_names, load_graph, rewired_nam
 TEST = "--test" in sys.argv
 
 # ---- grid ------------------------------------------------------------------
-# Decided: epsilon 0.05, b = 1.1-2.0, full beta x a grid, 5 reps (20 in high-beta band).
+# Decided: epsilon 0.05, b = 1.1-2.0, full beta x a grid, 10 reps everywhere.
 if TEST:
     # 8 graphs: enough for analyze.py to test its regression and real/degseq/er steps
     GRAPHS = ["lastfm", "lastfm_er", "lastfm_ba", "lastfm_ws", "lastfm_degseq",
               "lastfm_shuffled", "twitch", "twitch_er", "twitch_degseq", "twitch_shuffled"]
     BETAS = [0.1, 10.0]
-    A_FRACTIONS = [0.3, 0.6]
-    TEMPTATIONS = [1.5]
+    A_FRACTIONS = [0.3, 0.7]  # beta=10, a=0.7, b=2 oscillates: tests that flag
+    TEMPTATIONS = [2.0]
     REPS = 2
-    BAND_REPS = 4
-    STEPS = 60
-    WINDOW = 20
+    STEPS = 300
+    WINDOW = 100
     OUT_NAME = "sweep_test"
 else:
     # Decided 2026-10-07: real, degseq, shuffled only (no ER/BA/WS). Small networks
@@ -63,8 +62,9 @@ else:
     BETAS = [0.01, 0.1, 0.3, 0.6, 1.0, 2.0, 3.0, 5.0, 10.0, 20.0, 30.0, 100.0]
     A_FRACTIONS = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
     TEMPTATIONS = [1.1, 1.3, 1.5, 1.7, 2.0]
-    REPS = 5
-    BAND_REPS = 20  # high-beta band: repeat runs disagree there (pilot), see reps_for()
+    # 10 everywhere (decided 2026-10-07): affordable with fast_model. The extra reps in the
+    # high-beta band were dropped: the pilot "bistability" there was a period-2 oscillation.
+    REPS = 10
     STEPS = 1500
     WINDOW = 500  # final cooperation = mean over the last 500 steps (eps=0.05 pilot: most flat by ~600)
     OUT_NAME = "sweep"
@@ -81,7 +81,7 @@ NODES_DIR = os.path.join(RESULTS_DIR, OUT_NAME + "_nodes")  # per-node cooperati
 
 COLUMNS = ["run_id", "graph", "family", "graph_type", "agent", "b", "beta",
            "a_fraction", "aspiration", "epsilon", "kappa", "rep", "source_graph", "steps",
-           "cooperation", "cooperation_std", "drift", "mean_p", "seconds"]
+           "cooperation", "cooperation_std", "drift", "even_odd_gap", "mean_p", "seconds"]
 
 
 # ---- jobs ------------------------------------------------------------------
@@ -89,15 +89,6 @@ COLUMNS = ["run_id", "graph", "family", "graph_type", "agent", "b", "beta",
 def make_run_id(job):
     return (f"{job['graph']}|{job['agent']}|b={job['b']}|beta={job['beta']}"
             f"|a={job['a_fraction']}|rep={job['rep']}")
-
-
-def reps_for(beta, a_fraction):
-    """More repeats where the eps=0.05 pilot showed repeat runs ending at different
-    cooperation levels (beta >= 3, a = 0.6-0.8). Fixed before the sweep, not chosen
-    after seeing results."""
-    if beta >= 3.0 and 0.6 <= a_fraction <= 0.8:
-        return BAND_REPS
-    return REPS
 
 
 def source_graph(graph, rep):
@@ -120,7 +111,7 @@ def make_jobs():
         for b in TEMPTATIONS:
             for beta in BETAS:
                 for a_fraction in A_FRACTIONS:
-                    for rep in range(reps_for(beta, a_fraction)):
+                    for rep in range(REPS):
                         jobs.append({"graph": graph, "agent": "bm", "b": b, "beta": beta,
                                      "a_fraction": a_fraction, "rep": rep})
             if not RUN_FERMI:
@@ -232,6 +223,9 @@ def run_one(job):
         # second half of the window minus first half: ~0 if the run had settled,
         # big if it was still moving (tells slow convergence from bistability)
         "drift": float(window[WINDOW // 2:].mean() - window[:WINDOW // 2].mean()),
+        # every-other-round cooperation gap: big if the whole population flips C <-> D
+        # each round (period-2 oscillation, high beta). The mean above hides it.
+        "even_odd_gap": float(abs(window[0::2].mean() - window[1::2].mean())),
         "mean_p": mean_p,
         "seconds": round(time.time() - start, 2),
     }

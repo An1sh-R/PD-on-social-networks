@@ -138,7 +138,7 @@ Figures: `results/pilot_heatmaps.png`, `results/pilot_curves.png`. Data: `result
 - β: flat for β ≤ 0.3 (weak-learning regime, all alike), transition β ≈ 1–10, saturates β ≥ 30.
 - A: dead zone A ≳ 0.8b → everyone always unhappy → coop ≈ 0.5, nothing happens. Interesting A ∈ [0, ~0.8b]. Interesting band shifts with b → parametrise A as fraction of b.
 - Plateau: most runs flat by 300–600 steps (β = 0.01 slowest, ~600).
-- Ridge: β ≥ 10, A ≈ 0.65b. Reps diverge (e.g. 0.41 vs 0.54) and drift for hundreds of steps. Real slow/metastable dynamics, not noise. Std between reps up to 0.08; elsewhere ≤ 0.01.
+- Ridge: β ≥ 10, A ≈ 0.65b. Reps diverge (e.g. 0.41 vs 0.54) and drift for hundreds of steps. Std between reps up to 0.08; elsewhere ≤ 0.01. **Probably the same sampling artifact as below** (every-10th-step curves + period-2 oscillation); not re-checked at ε=0.2.
 - "Steps to plateau" heatmap overstates (tolerance 0.02 vs noise ~0.01–0.02). Block means used instead.
 
 ## Shuffled seats in main sweep (decided 2026-10-07)
@@ -151,7 +151,7 @@ Figures: `results/pilot_heatmaps.png`, `results/pilot_curves.png`. Data: `result
 ## Fixes after code review (2026-10-07)
 
 - degseq in main sweep: rep r loads rewiring r % 5 (`<real>_rewired0..4`, seeds 1000+r). Results no longer hang on one random graph. No extra runs. Row column `source_graph` says which file was used. (`topology_table.csv` still lists the seed-42 degseq; rewirings have identical degrees, similar clustering.)
-- Reps: 5 default, **20 in the high-β band** (β ≥ 3 and a = 0.6–0.8), fixed before the sweep. Reason: pilot seeds diverge there (e.g. 0.16 / 0.76 / 0.80); SE of mean ≈ 0.16 with 5 reps vs 0.08 with 20. Grid as written: 510 cells × 5 + 90 cells × 20 = 4350 runs per graph (+45% vs flat 5 reps).
+- Reps: ~~5 default, 20 in the high-β band~~ → **10 everywhere** (decided 2026-10-07). Band reps dropped: the "diverging seeds" there were a period-2 oscillation (see re-pilot section), not different end states. 12 β × 10 a × 5 b × 10 reps = 6000 runs per graph, 90,000 total, ≈ 7 h with `fast_model.py`.
 - analyze.py steps(): each comparison computed whenever its own pair exists (was: nothing without ER).
 - Timing: single-core measurements on this laptop vary 2–4× (e.g. 3 small networks × 3 types: 0.056 vs 0.093 s/step on different runs). Quote ranges, or benchmark actual parallel sweep jobs.
 - **Decided:** GRAPHS = real, degseq, shuffled for all 5 networks (15 graphs, no ER/BA/WS). Order: facebook, lastfm, twitch, deezer, github, so small networks finish first. β=0.01 and a=0.9 kept (flag in analysis: β=0.01 not settled at 1000 steps; a=0.9 dead zone). 4350 runs per graph, 65,250 total.
@@ -182,7 +182,8 @@ Fermi arms negligible (2 runs per b × rep vs 99 BM). 1000 steps instead of 1500
 - Dead zone A ≳ 0.8b remains (coop ≈ 0.5).
 - ~~Bistability~~ **WRONG, corrected 2026-10-07**: at high β, A ≈ 0.65–0.8b the pilot saw reps at 0.16 / 0.76 / 0.80. Real cause = **period-2 oscillation**: whole population flips C↔D every round (seed 0 at steps 990–999: 0.167, 0.808, 0.163, 0.812 …). Pilot saved every 10th step = even steps only → saw one phase; seeds differ only in phase. Mean over all steps ≈ 0.487 for every seed. Main sweep averages every step → fine.
 - Oscillation map (numpy, LastFM, 3 seeds, last 500 of 1000 steps, |even − odd| mean): none at b=1.1 or β ≤ 2 (bar few b=2 cells); present for b ≥ 1.5, β ≥ 3, a ≈ 0.6–0.9 (A > 1 = max cooperator payoff), gap up to 0.3–0.58. Means there ≈ 0.49.
-- Likely synchronous-update effect (everyone reacts to the same round at once, high β → near-full flips). Open: record it per run, mention in paper.
+- Likely synchronous-update effect (everyone reacts to the same round at once, high β → near-full flips). Mention in paper.
+- Recorded per run: `even_odd_gap` = |mean coop on even rounds − odd rounds| over the window. `analyze.py` flags cells with gap > 0.05 as oscillating (separate from status: their mean is still valid) and draws a heatmap row for it.
 - Elsewhere: plateau by 300–600 steps, rep spread ≤ 0.01.
 - Implication for structure test: β=0.5 sits in the flat regime → likely "no structure effect" there. Interesting regime is high β.
 
@@ -198,7 +199,7 @@ Fermi arms negligible (2 runs per b × rep vs 99 BM). 1000 steps instead of 1500
 
 - `src/fast_model.py`: same BM rules as `model.py`, but all players in arrays. Payoffs = one sparse matrix product (`A @ coop`), BM update = `np.where` over the four cases, shuffled seats = permute p (and per-player counts) each round. networkx still builds every graph; only gives A once per graph.
 - Measured single core, 200 steps: LastFM 0.94 → 0.045 s (21×), Facebook 1.11 → 0.11 s (10×), GitHub 6.6 → 0.49 s (13×).
-- Parallel, real sweep jobs, 8 processes, 1500 steps (s per run, wall): Facebook/LastFM/Twitch 0.06–0.10, Deezer 0.31–0.43, GitHub 0.77–0.94. **Full sweep (15 graphs, 65,250 runs) ≈ 5 h** (Mesa estimate was 155–350 h).
+- Parallel, real sweep jobs, 8 processes, 1500 steps (s per run, wall): Facebook/LastFM/Twitch 0.06–0.10, Deezer 0.31–0.43, GitHub 0.77–0.94. **Full sweep (15 graphs, 65,250 runs) ≈ 5 h** (Mesa estimate was 155–350 h). With 10 reps everywhere (90,000 runs) ≈ 7 h.
 - Caveat: runs left in background / laptop idle got 10–300× slower (Windows throttling or sleep). Run the sweep in an open terminal, plugged in, sleep off.
 - `model.py` (Mesa) stays the readable reference + used by tests, validation, pilot, Fermi.
 - `src/check_fast_model.py` → `results/fast_model_check.csv`. Exact: payoffs (7624 players) and BM update (38120 updates, 5 β) identical to Mesa. Statistical: 7 cells × 20 seeds × 600 steps on LastFM (incl. shuffled, β up to 100): all agree, |diff| ≤ 0.0005.

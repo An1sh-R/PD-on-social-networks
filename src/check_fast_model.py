@@ -1,4 +1,4 @@
-﻿"""Check that fast_model.py (numpy) does the same as model.py (Mesa reference).
+"""Check that fast_model.py (numpy) does the same as model.py (Mesa reference).
 
 Run from project root: python src/check_fast_model.py   (~5-10 min)
 

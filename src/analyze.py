@@ -9,6 +9,7 @@ sensitivity of BM change with beta, and which network features drive it?
 3. Regression    cooperation ~ standardised graph features, across topologies
 4. Node level    per-node cooperation vs degree and local clustering (real graphs)
 0. Diagnostics   is each cell settled? (drift) Do repeats agree? (spread between reps)
+                 Does it oscillate? (even_odd_gap: population flips C <-> D every round)
                  Flags known problem spots: beta = 0.01 (slow), a = 0.9 (dead zone).
 
 BM is plotted against beta (averaged over aspiration), one line per b.
@@ -39,6 +40,7 @@ FERMI_STYLES = {"fermi_average": ":", "fermi_accumulated": "--"}
 
 DRIFT_LIMIT = 0.02  # |drift| above this: run was still moving at the end
 SPREAD_LIMIT = 0.05  # std between repeats above this: repeats end at different levels
+OSCILLATION_LIMIT = 0.05  # |even - odd round cooperation| above this: period-2 oscillation
 SLOW_BETA = 0.01  # pilot: not settled by 1000 steps
 DEAD_ZONE_A = 0.9  # pilot: a >= 0.9 -> everyone unhappy, cooperation ~0.5, nothing happens
 
@@ -88,7 +90,8 @@ def plot_vs_beta(ax, table, value, ylabel):
 # ---- 0. diagnostics ----------------------------------------------------------
 
 def diagnostics(runs):
-    """Per cell (graph, b, beta, a): settled? repeats agree? Uses the drift column."""
+    """Per cell (graph, b, beta, a): settled? repeats agree? oscillating?
+    Uses the drift and even_odd_gap columns."""
     bm = bm_only(runs)
     if "drift" not in bm.columns:
         print("diagnostics: no drift column (sweep made before it was added), skipped")
@@ -98,13 +101,20 @@ def diagnostics(runs):
     cells = bm.groupby(keys, as_index=False).agg(
         mean_abs_drift=("abs_drift", "mean"), rep_spread=("cooperation", "std"),
         cooperation=("cooperation", "mean"), n_reps=("rep", "count"))
+    # older sweeps have no even_odd_gap column
+    has_gap = "even_odd_gap" in bm.columns
+    if has_gap:
+        gaps = bm.groupby(keys, as_index=False)["even_odd_gap"].mean()
+        cells["even_odd_gap"] = gaps["even_odd_gap"].values
+        # separate flag, not a status: an oscillating cell can still be settled (its mean is fine)
+        cells["oscillating"] = cells["even_odd_gap"] > OSCILLATION_LIMIT
 
     statuses = []
     for _, cell in cells.iterrows():
         if cell["mean_abs_drift"] > DRIFT_LIMIT:
             statuses.append("still moving")  # slow convergence: longer runs needed
         elif cell["rep_spread"] > SPREAD_LIMIT:
-            statuses.append("settled, repeats differ")  # bistability candidate
+            statuses.append("settled, repeats differ")  # repeats end at different levels
         else:
             statuses.append("ok")
     cells["status"] = statuses
@@ -118,17 +128,30 @@ def diagnostics(runs):
     if len(slow) > 0 and len(other) > 0:
         print(f"still moving: beta={SLOW_BETA:g} {(slow['status'] == 'still moving').mean():.0%} "
               f"of cells, other betas {(other['status'] == 'still moving').mean():.0%}")
+    if has_gap:
+        oscillating = cells[cells["oscillating"]]
+        print(f"oscillating (even-odd gap > {OSCILLATION_LIMIT}): {len(oscillating)} of {len(cells)} cells"
+              f" ({cells['oscillating'].mean():.0%})")
+        if len(oscillating) > 0:
+            print(f"  at beta {oscillating['beta'].min():g}-{oscillating['beta'].max():g}, "
+                  f"a {oscillating['a_fraction'].min():g}-{oscillating['a_fraction'].max():g}, "
+                  f"b {oscillating['b'].min():g}-{oscillating['b'].max():g}; "
+                  f"mean cooperation there {oscillating['cooperation'].mean():.3f}")
     dead = cells[cells["a_fraction"] >= DEAD_ZONE_A]
     if len(dead) > 0:
         print(f"dead zone a>={DEAD_ZONE_A:g}: mean cooperation {dead['cooperation'].mean():.3f} "
               f"(range {dead['cooperation'].min():.3f}-{dead['cooperation'].max():.3f}); "
               f"left out of beta plots")
 
-    # heatmaps beta x a, averaged over graphs: drift (top) and rep spread (bottom)
-    temptations = sorted(cells["b"].unique())
-    fig, axes = plt.subplots(2, len(temptations), figsize=(4 * len(temptations), 7.5), squeeze=False)
+    # heatmaps beta x a, averaged over graphs: drift, rep spread, (oscillation)
     rows = [("mean_abs_drift", "mean |drift|", 2 * DRIFT_LIMIT),
             ("rep_spread", "std between repeats", 2 * SPREAD_LIMIT)]
+    if has_gap:
+        rows.append(("even_odd_gap", "even-odd gap", 2 * OSCILLATION_LIMIT))
+    temptations = sorted(cells["b"].unique())
+    fig, axes = plt.subplots(len(rows), len(temptations),
+                             figsize=(4 * len(temptations), 3.75 * len(rows)), squeeze=False)
+    fig.subplots_adjust(hspace=0.5)  # room for x labels between rows
     for r, (column, label, vmax) in enumerate(rows):
         image = None
         for c, b in enumerate(temptations):
@@ -144,8 +167,8 @@ def diagnostics(runs):
             ax.set_ylabel("a = A/b")
             ax.set_title(f"{label}, b = {b:g}", fontsize=9)
         fig.colorbar(image, ax=axes[r].tolist(), shrink=0.8)
-    fig.suptitle(f"Diagnostics (mean over graphs). Red top = still moving (> {DRIFT_LIMIT}); "
-                 f"red bottom = repeats disagree (> {SPREAD_LIMIT})")
+    fig.suptitle(f"Diagnostics (mean over graphs). Red = still moving (> {DRIFT_LIMIT}), "
+                 f"repeats disagree (> {SPREAD_LIMIT}), oscillating (> {OSCILLATION_LIMIT})")
     fig.savefig(out_path("_diagnostics.png"), dpi=150, bbox_inches="tight")
     plt.close(fig)
     return cells
