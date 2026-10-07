@@ -57,6 +57,7 @@ else:
     WINDOW = 500  # final cooperation = mean over the last 500 steps (eps=0.05 pilot: most flat by ~600)
     OUT_NAME = "sweep"
 
+RUN_FERMI = False  # BM only for now; Fermi baseline later (set True, rerun: done runs are skipped)
 EPSILON = 0.05  # as Ezaki & Masuda 2017; 0.2 squeezed cooperation into [0.1, 0.9]
 KAPPA = 0.1
 # 8 processes on this 10-core laptop give ~3x speed-up over 1 (not 8x: cores share memory).
@@ -87,6 +88,8 @@ def make_jobs():
                     for a_fraction in A_FRACTIONS:
                         jobs.append({"graph": graph, "agent": "bm", "b": b, "beta": beta,
                                      "a_fraction": a_fraction, "rep": rep})
+                if not RUN_FERMI:
+                    continue
                 # Fermi does not use beta or aspiration
                 for agent in ["fermi_average", "fermi_accumulated"]:
                     jobs.append({"graph": graph, "agent": agent, "b": b, "beta": "-",
