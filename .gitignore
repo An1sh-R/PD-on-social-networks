@@ -4,3 +4,4 @@ __pycache__/
 ResearchQ/guide.pdf
 results/sweep_test_*
 results/*_nodes/
+results/structure_test_*

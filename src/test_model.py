@@ -168,6 +168,23 @@ def test_same_seed_same_result():
         assert runs[0] == runs[1]
 
 
+def test_shuffle_seats_keeps_seat_degrees():
+    # star: whoever sits in the centre must have 3 neighbours, leaves 1
+    G = nx.star_graph(3)
+    model = CooperationModel(G, "bm", shuffle_seats=True, seed=3)
+    centre_players = set()
+    for _ in range(30):
+        model.step()
+        degrees = sorted(len(p.neighbors) for p in model.players)
+        assert degrees == [1, 1, 1, 3]
+        for p in model.players:
+            if len(p.neighbors) == 3:
+                centre_players.add(p)
+            for other in p.neighbors:
+                assert p in other.neighbors  # links stay two-way
+    assert len(centre_players) > 1  # the centre seat really changes hands
+
+
 def test_bad_arguments_rejected():
     G = nx.path_graph(2)
     for kwargs in [{"agent_type": "q-learning"}, {"agent_type": "fermi", "payoff_scheme": "total"}]:

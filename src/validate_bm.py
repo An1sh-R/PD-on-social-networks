@@ -38,21 +38,10 @@ def ring(k):
     return nx.watts_strogatz_graph(N, k, 0.0)
 
 
-def shuffle_positions(model, G):
-    """Give every player a new random node; the ring itself stays the same."""
-    order = list(model.players)
-    model.random.shuffle(order)
-    for node in G.nodes():
-        neighbor_nodes = list(G.neighbors(node))
-        order[node].neighbors = [order[v] for v in neighbor_nodes]
-
-
 def run_once(G, b, shuffled, seed):
-    model = CooperationModel(G, "bm", game="donation", b=b, c=1.0, seed=seed, **BM_PARAMS)
-    for _ in range(ROUNDS):
-        model.step()
-        if shuffled:
-            shuffle_positions(model, G)
+    model = CooperationModel(G, "bm", game="donation", b=b, c=1.0, shuffle_seats=shuffled,
+                             seed=seed, **BM_PARAMS)
+    model.run(ROUNDS)
     return model.datacollector.model_vars["cooperation"]  # one value per round
 
 

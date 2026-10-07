@@ -29,7 +29,7 @@ from networks import REAL_FILES, RESULTS_DIR, all_names, load_graph
 TEST = "--test" in sys.argv
 
 # ---- grid ------------------------------------------------------------------
-# TODO: epsilon, temptations and grid density still to be decided (design.md).
+# Decided: epsilon 0.05, b = 1.1-2.0 (5 values). TODO: grid density / budget.
 if TEST:
     GRAPHS = ["lastfm", "lastfm_er"]
     BETAS = [0.1, 10.0]
@@ -43,13 +43,13 @@ else:
     GRAPHS = all_names()  # 5 real + 20 synthetic
     BETAS = [0.01, 0.1, 0.3, 0.6, 1.0, 2.0, 3.0, 5.0, 10.0, 20.0, 30.0, 100.0]
     A_FRACTIONS = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-    TEMPTATIONS = [1.5]
+    TEMPTATIONS = [1.1, 1.3, 1.5, 1.7, 2.0]
     REPS = 5
     STEPS = 1000
     WINDOW = 400  # final cooperation = mean over the last 400 steps (pilot: flat by ~600)
     OUT_NAME = "sweep"
 
-EPSILON = 0.2
+EPSILON = 0.05  # as Ezaki & Masuda 2017; 0.2 squeezed cooperation into [0.1, 0.9]
 KAPPA = 0.1
 # 8 processes on this 10-core laptop give ~3x speed-up over 1 (not 8x: cores share memory).
 N_PROCESSES = 8

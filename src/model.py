@@ -120,7 +120,7 @@ def cooperation_fraction(model):
 class CooperationModel(mesa.Model):
     def __init__(self, G, agent_type, b=1.5, payoff_scheme="average", kappa=0.1,
                  beta=1.0, aspiration=0.5, epsilon=0.2, initial_coop=0.5,
-                 record_from=0, game="weak_pd", c=1.0, seed=None):
+                 record_from=0, game="weak_pd", c=1.0, shuffle_seats=False, seed=None):
         """
         G: networkx graph, connected, nodes labelled 0..n-1 (see networks.py)
         agent_type: "fermi" or "bm"
@@ -130,6 +130,9 @@ class CooperationModel(mesa.Model):
         record_from: from this round on (0 = first round), count each node's cooperation
         game: "weak_pd" (main study) or "donation" (only to check BM against Ezaki & Masuda 2017)
         c: cost of cooperating in the donation game (b = benefit there)
+        shuffle_seats: if True, players get new random nodes after every round. The
+            network stays the same, but nobody keeps fixed partners (Ezaki & Masuda 2017).
+            node_cooperation() is then per player, not per node.
         seed: int, makes the run repeatable
         """
         super().__init__(rng=seed)  # int seed makes runs repeatable
@@ -150,6 +153,8 @@ class CooperationModel(mesa.Model):
         self.record_from = record_from
         self.rounds_played = 0  # our own counter: mesa's self.steps is already +1 inside step()
         self.rounds_counted = 0
+        self.G = G
+        self.shuffle_seats = shuffle_seats
 
         # One player per node. Node ids are 0..n-1 so list index = node id.
         self.players = []
@@ -160,9 +165,7 @@ class CooperationModel(mesa.Model):
                 player = BMAgent(self, initial_coop)
             self.players.append(player)
 
-        for node in range(G.number_of_nodes()):
-            neighbor_nodes = list(G.neighbors(node))
-            self.players[node].neighbors = [self.players[v] for v in neighbor_nodes]
+        self.seat_players(self.players)
 
         self.datacollector = mesa.DataCollector(
             model_reporters={"cooperation": cooperation_fraction}
@@ -184,6 +187,17 @@ class CooperationModel(mesa.Model):
         for player in self.players:
             player.update()
         self.rounds_played += 1
+
+        if self.shuffle_seats:
+            new_order = list(self.players)
+            self.random.shuffle(new_order)
+            self.seat_players(new_order)
+
+    def seat_players(self, order):
+        """order[node] = player sitting on that node. Sets everyone's neighbour list."""
+        for node in range(self.G.number_of_nodes()):
+            neighbor_nodes = list(self.G.neighbors(node))
+            order[node].neighbors = [order[v] for v in neighbor_nodes]
 
     def run(self, n_steps):
         for _ in range(n_steps):

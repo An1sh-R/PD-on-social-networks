@@ -31,6 +31,8 @@ Experimentation/
     validate_bm.py    BM vs Ezaki & Masuda 2017 rings -> results/            [done]
     pilot.py          coarse BM beta x A x b scan on LastFM -> results/       [done]
     run.py            parameter sweep -> results/ (--test = tiny grid)        [done]
+    structure_test.py mentor design: original vs rewired vs shuffled seats  [done]
+    structure_summary.py  Welch CIs, +/-0.01 equivalence verdict, figures     [done]
     analyze.py        stats + figures
   graphs/           network drawings (one png per real graph)
   results/          csv, result figures

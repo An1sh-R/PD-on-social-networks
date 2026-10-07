@@ -31,8 +31,10 @@ SAVE_EVERY = 10
 FINAL_WINDOW = 200  # last 200 steps = "final" cooperation
 PLATEAU_TOLERANCE = 0.02
 N_PROCESSES = 8
+EPSILON = 0.05  # first pilot used 0.2 (model default); its files keep the _eps0.2 tag
 
-CURVES_PATH = os.path.join(RESULTS_DIR, "pilot_curves.csv")
+TAG = f"eps{EPSILON}"
+CURVES_PATH = os.path.join(RESULTS_DIR, f"pilot_curves_{TAG}.csv")
 
 
 def run_one(settings):
@@ -40,7 +42,7 @@ def run_one(settings):
     beta, aspiration, b, rep = settings
     G = load_graph(NETWORK)
     model = CooperationModel(G, "bm", b=b, beta=beta, aspiration=aspiration,
-                             seed=rep)
+                             epsilon=EPSILON, seed=rep)
     model.run(STEPS)
     curve = model.datacollector.model_vars["cooperation"]
     rows = []
@@ -122,8 +124,8 @@ def plot_summary(summary):
             part = mean_table[mean_table["b"] == b]
             image = heatmap(axes[r, c], part, column, f"{label}\nb = {b}", vmin, vmax, cmap)
         fig.colorbar(image, ax=axes[r, :].tolist(), shrink=0.8)
-    fig.suptitle(f"BM pilot on {NETWORK}: {REPS} reps x {STEPS} steps", fontsize=13)
-    fig.savefig(os.path.join(RESULTS_DIR, "pilot_heatmaps.png"), dpi=130, bbox_inches="tight")
+    fig.suptitle(f"BM pilot on {NETWORK}, eps={EPSILON}: {REPS} reps x {STEPS} steps", fontsize=13)
+    fig.savefig(os.path.join(RESULTS_DIR, f"pilot_heatmaps_{TAG}.png"), dpi=130, bbox_inches="tight")
     plt.close(fig)
     return mean_table
 
@@ -140,7 +142,7 @@ def plot_example_curves(curves):
     ax.set_ylabel("fraction cooperating")
     ax.set_title(f"BM on {NETWORK}, A=0.5, b=1.5")
     ax.legend(fontsize=8, ncol=2)
-    fig.savefig(os.path.join(RESULTS_DIR, "pilot_curves.png"), dpi=130, bbox_inches="tight")
+    fig.savefig(os.path.join(RESULTS_DIR, f"pilot_curves_{TAG}.png"), dpi=130, bbox_inches="tight")
     plt.close(fig)
 
 

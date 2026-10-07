@@ -79,7 +79,7 @@ def make_ws(n, avg_k, target_clustering):
     return clean(best_graph)
 
 
-def make_degseq(G_real):
+def make_degseq(G_real, seed=SEED):
     """Shuffle a copy of the real graph, keeping every node's degree exactly.
 
     Done once to generate a fixed graph. (nx.configuration_model was tried first,
@@ -87,8 +87,20 @@ def make_degseq(G_real):
     """
     G = G_real.copy()
     nswap = 10 * G.number_of_edges()
-    nx.double_edge_swap(G, nswap=nswap, max_tries=100 * nswap, seed=SEED)
+    nx.double_edge_swap(G, nswap=nswap, max_tries=100 * nswap, seed=seed)
     return clean(G)
+
+
+# Structure test (structure_test.py) uses 5 independent degree-preserving
+# shuffles per real graph, named e.g. "github_rewired0" .. "github_rewired4".
+N_REWIRINGS = 5
+
+
+def rewired_names(real_name):
+    names = []
+    for r in range(N_REWIRINGS):
+        names.append(f"{real_name}_rewired{r}")
+    return names
 
 
 def make_synthetic(real_name, G_real, kind):
@@ -100,6 +112,9 @@ def make_synthetic(real_name, G_real, kind):
         return make_ba(n, avg_k)
     if kind == "ws":
         return make_ws(n, avg_k, nx.average_clustering(G_real))
+    if kind.startswith("rewired"):
+        r = int(kind[len("rewired"):])
+        return make_degseq(G_real, seed=1000 + r)  # different seed per rewiring
     return make_degseq(G_real)
 
 
