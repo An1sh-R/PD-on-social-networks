@@ -72,8 +72,9 @@ else:
 RUN_FERMI = False  # BM only for now; Fermi baseline later (set True, rerun: done runs are skipped)
 EPSILON = 0.05  # slip = flip the intended action, as Ezaki & Masuda 2017
 KAPPA = 0.1
-# 8 processes on this 10-core laptop: full sweep ~5 h with fast_model (measured 2026-10-07).
-N_PROCESSES = 8
+# 8 processes on this 10-core / 16-thread laptop: full sweep ~5 h with fast_model
+# (measured 2026-10-07). 12 chosen 2026-10-08 (untested: gain over 8 may be small).
+N_PROCESSES = 12
 N_BUILD_PROCESSES = 3  # building rewired graphs needs more memory per process
 
 RUNS_PATH = os.path.join(RESULTS_DIR, OUT_NAME + "_runs.csv")
