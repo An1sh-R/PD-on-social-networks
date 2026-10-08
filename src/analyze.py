@@ -244,16 +244,20 @@ def steps(means):
     table = pd.DataFrame(rows)
     table.to_csv(out_path("_steps.csv"), index=False)
 
-    fig, axes = plt.subplots(1, 3, figsize=(19, 4.5), sharey=True)
-    plot_vs_beta(axes[0], table, "partner_effect", "cooperation difference (mean over families)")
-    axes[0].set_title("real - shuffled: fixed partners")
-    plot_vs_beta(axes[1], table, "structure_effect", "")
-    axes[1].set_title("real - degseq: structure beyond degree")
-    plot_vs_beta(axes[2], table, "degree_effect", "")
-    axes[2].set_title("degseq - ER: degree heterogeneity")
-    for ax in axes:
+    # one panel per comparison that has data (e.g. no ER in the main sweep -> no degree panel)
+    panels = []
+    for column, title in [("partner_effect", "real - shuffled: fixed partners"),
+                          ("structure_effect", "real - degseq: structure beyond degree"),
+                          ("degree_effect", "degseq - ER: degree heterogeneity")]:
+        if table[column].notna().any():
+            panels.append((column, title))
+    fig, axes = plt.subplots(1, len(panels), figsize=(6.5 * len(panels), 4.5), sharey=True, squeeze=False)
+    for ax, (column, title) in zip(axes[0], panels):
+        plot_vs_beta(ax, table.dropna(subset=[column]), column, "")
+        ax.set_title(title)
         ax.axhline(0, color="black", linewidth=0.5)
-    axes[2].legend(fontsize=7)
+    axes[0][0].set_ylabel("cooperation difference (mean over families)")
+    axes[0][-1].legend(fontsize=7)
     fig.savefig(out_path("_steps.png"), dpi=150, bbox_inches="tight")
     plt.close(fig)
     return table

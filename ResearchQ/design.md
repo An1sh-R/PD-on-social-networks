@@ -210,6 +210,11 @@ Fermi arms negligible (2 runs per b × rep vs 99 BM). 1000 steps instead of 1500
 - `src/check_fast_model.py` → `results/fast_model_check.csv`. Exact: payoffs (7624 players) and BM update (38120 updates, 5 β) identical to Mesa. Statistical: 7 cells × 20 seeds × 600 steps on LastFM (incl. shuffled, β up to 100): all agree, |diff| ≤ 0.0005. Re-run with corrected ε: 7/7 agree, |diff| ≤ 0.0002.
 - Same seed ≠ same run in the two versions (random numbers drawn differently).
 
+## Main sweep run (2026-10-08)
+
+- 90,000 BM runs (15 graphs × 6000), 12 processes, 339 min (+ ~10 min building rewirings). No errors, no restarts, 0 missing values. Output `results/sweep_runs.csv`, log `results/sweep.log`, analysis `results/sweep_*`.
+- Diagnostics: 8992/9000 cells ok, 8 still moving (all β=0.01); 1062 cells (12%) oscillate (β ≥ 2); dead zone a=0.9 mean coop 0.478.
+
 ## Still open
 
 - β range. Pilot.
