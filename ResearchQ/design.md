@@ -228,6 +228,8 @@ Question: averaged vs accumulated payoff, BM and Fermi. Which topology features 
   - Pal & Sengupta 2021 (bioRxiv 10.1101/2021.09.16.460462, BM, summed payoffs): initial aspiration ∝ k_i. Precedent for degree-scaled aspiration.
   - No paper found with BM + accumulated payoffs + one shared fixed A on heterogeneous networks. Shared A would make hubs always satisfied, leaves never → outcome fixed by degree. Rejected.
 - Code: `fast_model.py` has `run_fermi` (numpy) and `run_bm(payoff_scheme=...)`. Mesa `BMAgent` takes payoff_scheme too. `check_fast_model.py` checks both.
+- Check 2026-10-08 (LastFM, 600 steps, 20 seeds): exact payoffs (both schemes), BM update (both schemes), Fermi copy probability, uniform neighbour choice all pass. Statistical: 14/14 cells agree (4 Fermi, 7 BM averaged, 3 BM accumulated). Fermi compared on whole-run mean (absorbing states: late window is often exactly 0). Shuffled-seat Fermi always dies out on LastFM.
+- numpy Fermi: ~0.15 s per 600-step LastFM run.
 - First look (numpy, LastFM, 600 steps): Fermi-averaged → cooperation ≈ 0 for κ ≥ 0.1 at b ≥ 1.05 (0.01–0.09 at κ = 0.01). Fermi-accumulated 0.4–0.97. Floor effect: Fermi-averaged sensitivity will be ~0 by construction. Fermi has no mutation → absorbing states, unlike BM (ε). Consider a mutation rate before the sweep.
 
 ## Still open

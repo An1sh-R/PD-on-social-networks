@@ -44,7 +44,9 @@ Settled choices (game, networks, agents, measures) in `design.md`.
 
 - Du, Wu & Wang 2015, Sci Rep. Aspiration ≈ well-mixed.
 - Zhou, Wu, Du & Wang 2021, Nat Commun. Robust on all networks, weak selection.
-- Ezaki, Horita, Takezawa & Masuda 2016, PLOS Comput Biol. BM model.
+- Ezaki, Horita, Takezawa & Masuda 2016, PLOS Comput Biol. BM model. **Varied β**: cooperation more frequent at large β (Fig 2B). Lattice only, no static vs shuffled. Pavlov = β → ∞ limit.
+  - Ezaki & Masuda 2017 then fixed β = 0.2 for static vs shuffled ("β did not considerably alter the behavior … unless extreme"). Their payoff range ~7 vs ours ~1.5 → their β = 0.2 ≈ our β ≈ 1.
+  - Our sweep (2026-10-08): fixed-partner effect grows with β (A ≤ 1: 0.015 at β = 0.1 → 0.047 at β = 100). Not shown before as far as found (15 citing papers of E&M 2017 checked, Semantic Scholar). Caveat: shuffling also removes fixed degree position.
 - Ezaki & Masuda 2017, PLOS ONE. BM on rings.
 - Cameron & Cintrón-Arias 2020, arXiv:2004.06817. Real-network PD.
 - Ohtsuki et al. 2006, Nature. b/c > k (death–birth only).
