@@ -1,19 +1,23 @@
-"""Analyse the main sweep (run src/run.py first). Answers: how does the topology
-sensitivity of BM change with beta, and which network features drive it?
+"""Analyse BM with average payoff (run src/run.py first). Answers: how does the
+topology sensitivity of BM change with beta, and which network features drive it?
+(Average vs accumulated payoff and Fermi: analyze_payoffs.py.)
 
-1. Sensitivity   spread (std) of cooperation across all topologies, per condition
-                 ("shuffled" runs are left out: same topology as the real graph)
-2. Steps         real - shuffled (fixed partners: mentor's re-seating test)
-                 real - degseq   (structure beyond the degree sequence)
-                 degseq - er     (degree heterogeneity)
-3. Regression    cooperation ~ standardised graph features, across topologies
-4. Node level    per-node cooperation vs degree and local clustering (real graphs)
-0. Diagnostics   is each cell settled? (drift) Do repeats agree? (spread between reps)
-                 Does it oscillate? (even_odd_gap: population flips C <-> D every round)
-                 Flags known problem spots: beta = 0.01 (slow), a = 0.9 (dead zone).
+0. Diagnostics   is each cell settled (drift)? Do repeats agree? Does it oscillate
+                 (even_odd_gap: population flips C <-> D every round)?
+1. Sensitivity   spread (std) of cooperation across the 25 topologies, per condition
+                 ("shuffled" left out: same topology as the real graph)
+2. Steps         real - shuffled (fixed partners), real - degseq (structure beyond the
+                 degree sequence), degseq - er (degree heterogeneity).
+                 Per family and per regime, never pooled over families (audit
+                 2026-10-08: families with opposite signs cancelled out). 95% CI over reps
+                 (paired: same seed in both graphs).
+3. Regression    cooperation ~ standardised graph features, across 25 topologies
+4. Node level    per-node cooperation vs degree and local clustering (real + degseq)
 
-BM is plotted against beta (averaged over aspiration), one line per b.
-Fermi has no beta: its values are drawn as grey horizontal lines.
+Regimes (a = A/b): "a=0" nobody is ever unhappy (payoff >= 0 = A); "A<=1" cooperators
+can be satisfied; "A>1" a cooperator never reaches A (max cooperator payoff = 1);
+"dead zone" a = 0.9, everyone unhappy, cooperation ~0.5. Only A<=1 and A>1 are shown
+in the step plots.
 
 Run from project root:  python src/analyze.py   (or --test for the test sweep)
 Writes results/<name>_*.csv and results/<name>_*.png
@@ -30,85 +34,69 @@ import pandas as pd
 import statsmodels.api as sm
 from scipy import stats
 
-from networks import REAL_FILES, RESULTS_DIR, load_graph
+from networks import REAL_FILES, RESULTS_DIR, load_graph, rewired_names
 
 TEST = "--test" in sys.argv
-NAME = "sweep_test" if TEST else "sweep"
+NAME = "sweep_v2_test" if TEST else "sweep_v2"
 FEATURES = ["mean_degree", "degree_cv", "clustering", "assortativity"]
-FERMI_ARMS = ["fermi_average", "fermi_accumulated"]
-FERMI_STYLES = {"fermi_average": ":", "fermi_accumulated": "--"}
 
 DRIFT_LIMIT = 0.02  # |drift| above this: run was still moving at the end
 SPREAD_LIMIT = 0.05  # std between repeats above this: repeats end at different levels
 OSCILLATION_LIMIT = 0.05  # |even - odd round cooperation| above this: period-2 oscillation
 SLOW_BETA = 0.01  # pilot: not settled by 1000 steps
-DEAD_ZONE_A = 0.9  # pilot: a >= 0.9 -> everyone unhappy, cooperation ~0.5, nothing happens
+DEAD_ZONE_A = 0.9  # pilot: a >= 0.9 -> everyone unhappy, cooperation ~0.5
+SHOWN_REGIMES = ["A<=1", "A>1"]
 
 
 def out_path(suffix):
     return os.path.join(RESULTS_DIR, NAME + suffix)
 
 
-def load_condition_means():
-    """Mean cooperation over reps, one row per (graph, agent, b, beta, a_fraction)."""
-    # beta and a_fraction are "-" for Fermi, so read them as text
+def regime(a_fraction, b):
+    if a_fraction == 0:
+        return "a=0"
+    if a_fraction >= DEAD_ZONE_A:
+        return "dead zone"
+    if a_fraction * b <= 1:
+        return "A<=1"
+    return "A>1"
+
+
+def load_bm_runs(payoff_scheme="average"):
+    """BM runs of one payoff scheme, beta and a_fraction as numbers, plus a regime column."""
     runs = pd.read_csv(out_path("_runs.csv"), dtype={"beta": str, "a_fraction": str})
-    keys = ["graph", "family", "graph_type", "agent", "b", "beta", "a_fraction"]
-    means = runs.groupby(keys, as_index=False)["cooperation"].mean()
-    return runs, means
+    bm = runs[(runs["agent"] == "bm") & (runs["payoff_scheme"] == payoff_scheme)].copy()
+    bm["beta"] = bm["beta"].astype(float)
+    bm["a_fraction"] = bm["a_fraction"].astype(float)
+    regimes = []
+    for _, row in bm.iterrows():
+        regimes.append(regime(row["a_fraction"], row["b"]))
+    bm["regime"] = regimes
+    return bm
 
 
-def bm_only(table):
-    """BM rows with beta and a_fraction as numbers."""
-    part = table[table["agent"] == "bm"].copy()
-    part["beta"] = part["beta"].astype(float)
-    part["a_fraction"] = part["a_fraction"].astype(float)
-    return part
-
-
-def plot_vs_beta(ax, table, value, ylabel):
-    """BM: value vs beta (mean over aspiration), one line per b. Fermi: grey lines."""
-    bm = bm_only(table)
-    # dead zone left out of the average over aspiration: it would only flatten the lines
-    bm = bm[bm["a_fraction"] < DEAD_ZONE_A]
-    for b in sorted(bm["b"].unique()):
-        line = bm[bm["b"] == b].groupby("beta")[value].mean()
-        ax.plot(line.index, line.values, marker="o", markersize=3, label=f"BM b={b:g}")
-    if len(bm) > 0 and bm["beta"].min() <= SLOW_BETA:
-        ax.axvspan(SLOW_BETA * 0.7, SLOW_BETA * 1.4, color="orange", alpha=0.15,
-                   label=f"beta={SLOW_BETA:g}: may not be settled")
-    for arm in FERMI_ARMS:
-        fermi = table[table["agent"] == arm]
-        if len(fermi) > 0:
-            ax.axhline(fermi[value].mean(), color="grey", linestyle=FERMI_STYLES[arm],
-                       label=arm.replace("_", " ") + " (mean over b)")
-    ax.set_xscale("log")
-    ax.set_xlabel("beta")
-    ax.set_ylabel(ylabel)
+def t_interval(values):
+    """Mean and 95% half-width (t distribution) of a list of numbers."""
+    values = np.asarray(values, dtype=float)
+    if len(values) < 2:
+        return values.mean(), np.nan
+    half = stats.t.ppf(0.975, len(values) - 1) * values.std(ddof=1) / np.sqrt(len(values))
+    return values.mean(), half
 
 
 # ---- 0. diagnostics ----------------------------------------------------------
 
-def diagnostics(runs):
-    """Per cell (graph, b, beta, a): settled? repeats agree? oscillating?
-    Uses the drift and even_odd_gap columns."""
-    bm = bm_only(runs)
-    if "drift" not in bm.columns:
-        print("diagnostics: no drift column (sweep made before it was added), skipped")
-        return None
+def diagnostics(bm, label):
+    """Per cell (graph, b, beta, a): settled? repeats agree? oscillating?"""
+    bm = bm.copy()
     bm["abs_drift"] = bm["drift"].abs()
     keys = ["graph", "graph_type", "b", "beta", "a_fraction"]
     cells = bm.groupby(keys, as_index=False).agg(
         mean_abs_drift=("abs_drift", "mean"), rep_spread=("cooperation", "std"),
-        cooperation=("cooperation", "mean"), n_reps=("rep", "count"))
-    # older sweeps have no even_odd_gap column
-    has_gap = "even_odd_gap" in bm.columns
-    if has_gap:
-        gaps = bm.groupby(keys, as_index=False)["even_odd_gap"].mean()
-        cells["even_odd_gap"] = gaps["even_odd_gap"].values
-        # separate flag, not a status: an oscillating cell can still be settled (its mean is fine)
-        cells["oscillating"] = cells["even_odd_gap"] > OSCILLATION_LIMIT
-
+        cooperation=("cooperation", "mean"), even_odd_gap=("even_odd_gap", "mean"),
+        n_reps=("rep", "count"))
+    # separate flag, not a status: an oscillating cell can still be settled (its mean is fine)
+    cells["oscillating"] = cells["even_odd_gap"] > OSCILLATION_LIMIT
     statuses = []
     for _, cell in cells.iterrows():
         if cell["mean_abs_drift"] > DRIFT_LIMIT:
@@ -118,41 +106,30 @@ def diagnostics(runs):
         else:
             statuses.append("ok")
     cells["status"] = statuses
-    cells.to_csv(out_path("_diagnostics.csv"), index=False)
+    cells.to_csv(out_path(f"_diagnostics_{label}.csv"), index=False)
 
     print()
-    print("DIAGNOSTICS (BM cells)")
+    print(f"DIAGNOSTICS (BM {label} payoff cells)")
     print(cells["status"].value_counts().to_string())
     slow = cells[cells["beta"] <= SLOW_BETA]
-    other = cells[cells["beta"] > SLOW_BETA]
-    if len(slow) > 0 and len(other) > 0:
-        print(f"still moving: beta={SLOW_BETA:g} {(slow['status'] == 'still moving').mean():.0%} "
-              f"of cells, other betas {(other['status'] == 'still moving').mean():.0%}")
-    if has_gap:
-        oscillating = cells[cells["oscillating"]]
-        print(f"oscillating (even-odd gap > {OSCILLATION_LIMIT}): {len(oscillating)} of {len(cells)} cells"
-              f" ({cells['oscillating'].mean():.0%})")
-        if len(oscillating) > 0:
-            print(f"  at beta {oscillating['beta'].min():g}-{oscillating['beta'].max():g}, "
-                  f"a {oscillating['a_fraction'].min():g}-{oscillating['a_fraction'].max():g}, "
-                  f"b {oscillating['b'].min():g}-{oscillating['b'].max():g}; "
-                  f"mean cooperation there {oscillating['cooperation'].mean():.3f}")
-    dead = cells[cells["a_fraction"] >= DEAD_ZONE_A]
-    if len(dead) > 0:
-        print(f"dead zone a>={DEAD_ZONE_A:g}: mean cooperation {dead['cooperation'].mean():.3f} "
-              f"(range {dead['cooperation'].min():.3f}-{dead['cooperation'].max():.3f}); "
-              f"left out of beta plots")
+    if len(slow) > 0:
+        print(f"still moving at beta={SLOW_BETA:g}: {(slow['status'] == 'still moving').mean():.0%} of cells")
+    oscillating = cells[cells["oscillating"]]
+    print(f"oscillating (even-odd gap > {OSCILLATION_LIMIT}): {len(oscillating)} of {len(cells)} cells"
+          f" ({cells['oscillating'].mean():.0%})")
+    if len(oscillating) > 0:
+        print(f"  at beta {oscillating['beta'].min():g}-{oscillating['beta'].max():g}, "
+              f"a {oscillating['a_fraction'].min():g}-{oscillating['a_fraction'].max():g}, "
+              f"b {oscillating['b'].min():g}-{oscillating['b'].max():g}")
 
-    # heatmaps beta x a, averaged over graphs: drift, rep spread, (oscillation)
     rows = [("mean_abs_drift", "mean |drift|", 2 * DRIFT_LIMIT),
-            ("rep_spread", "std between repeats", 2 * SPREAD_LIMIT)]
-    if has_gap:
-        rows.append(("even_odd_gap", "even-odd gap", 2 * OSCILLATION_LIMIT))
+            ("rep_spread", "std between repeats", 2 * SPREAD_LIMIT),
+            ("even_odd_gap", "even-odd gap", 2 * OSCILLATION_LIMIT)]
     temptations = sorted(cells["b"].unique())
     fig, axes = plt.subplots(len(rows), len(temptations),
                              figsize=(4 * len(temptations), 3.75 * len(rows)), squeeze=False)
-    fig.subplots_adjust(hspace=0.5)  # room for x labels between rows
-    for r, (column, label, vmax) in enumerate(rows):
+    fig.subplots_adjust(hspace=0.5)
+    for r, (column, title, vmax) in enumerate(rows):
         image = None
         for c, b in enumerate(temptations):
             ax = axes[r][c]
@@ -165,99 +142,92 @@ def diagnostics(runs):
             ax.set_yticklabels([f"{y:g}" for y in grid.index])
             ax.set_xlabel("beta")
             ax.set_ylabel("a = A/b")
-            ax.set_title(f"{label}, b = {b:g}", fontsize=9)
+            ax.set_title(f"{title}, b = {b:g}", fontsize=9)
         fig.colorbar(image, ax=axes[r].tolist(), shrink=0.8)
-    fig.suptitle(f"Diagnostics (mean over graphs). Red = still moving (> {DRIFT_LIMIT}), "
-                 f"repeats disagree (> {SPREAD_LIMIT}), oscillating (> {OSCILLATION_LIMIT})")
-    fig.savefig(out_path("_diagnostics.png"), dpi=150, bbox_inches="tight")
+    fig.suptitle(f"Diagnostics, BM {label} payoff (mean over graphs)")
+    fig.savefig(out_path(f"_diagnostics_{label}.png"), dpi=150, bbox_inches="tight")
     plt.close(fig)
     return cells
 
 
 # ---- 1. sensitivity ----------------------------------------------------------
 
-def sensitivity(means):
-    keys = ["agent", "b", "beta", "a_fraction"]
-    topologies = means[means["graph_type"] != "shuffled"]
-    table = topologies.groupby(keys, as_index=False)["cooperation"].agg(["std", "mean", "count"])
+def sensitivity(bm):
+    """Std of cooperation across topologies (all graph types except shuffled), per cell."""
+    topologies = bm[bm["graph_type"] != "shuffled"]
+    means = topologies.groupby(["graph", "b", "beta", "a_fraction", "regime"], as_index=False)["cooperation"].mean()
+    table = means.groupby(["b", "beta", "a_fraction", "regime"], as_index=False)["cooperation"].agg(
+        ["std", "mean", "count"])
     table = table.rename(columns={"std": "sensitivity", "mean": "mean_coop", "count": "n_graphs"})
     table.to_csv(out_path("_sensitivity.csv"), index=False)
 
-    fig, ax = plt.subplots(figsize=(8, 5))
-    plot_vs_beta(ax, table, "sensitivity", "std of cooperation across graphs")
-    ax.set_title("Topology sensitivity")
-    ax.legend(fontsize=7)
-    fig.savefig(out_path("_sensitivity.png"), dpi=150, bbox_inches="tight")
-    plt.close(fig)
-
-    # heatmap beta x a for BM, one panel per b
-    bm = bm_only(table)
-    temptations = sorted(bm["b"].unique())
-    fig, axes = plt.subplots(1, len(temptations), figsize=(4 * len(temptations), 4), squeeze=False)
-    image = None
-    for ax, b in zip(axes[0], temptations):
-        grid = bm[bm["b"] == b].pivot(index="a_fraction", columns="beta", values="sensitivity")
-        image = ax.imshow(grid.values, origin="lower", aspect="auto", cmap="viridis",
-                          vmin=0, vmax=bm["sensitivity"].max())
-        ax.set_xticks(range(len(grid.columns)))
-        ax.set_xticklabels([f"{x:g}" for x in grid.columns], rotation=45)
-        ax.set_yticks(range(len(grid.index)))
-        ax.set_yticklabels([f"{y:g}" for y in grid.index])
+    fig, axes = plt.subplots(1, len(SHOWN_REGIMES), figsize=(6.5 * len(SHOWN_REGIMES), 4.5), sharey=True)
+    for ax, shown in zip(axes, SHOWN_REGIMES):
+        part = table[table["regime"] == shown]
+        for b in sorted(part["b"].unique()):
+            line = part[part["b"] == b].groupby("beta")["sensitivity"].mean()
+            ax.plot(line.index, line.values, marker="o", markersize=3, label=f"b={b:g}")
+        ax.set_xscale("log")
         ax.set_xlabel("beta")
-        ax.set_title(f"b = {b:g}")
-    axes[0][0].set_ylabel("aspiration a = A/b")
-    fig.colorbar(image, ax=axes[0].tolist(), label="sensitivity")
-    fig.savefig(out_path("_sensitivity_heatmap.png"), dpi=150, bbox_inches="tight")
+        ax.set_title(f"regime {shown}")
+    axes[0].set_ylabel(f"std of cooperation across {table['n_graphs'].max()} graphs")
+    axes[-1].legend(fontsize=7)
+    fig.suptitle("Topology sensitivity of BM (average payoff), mean over a within regime")
+    fig.savefig(out_path("_sensitivity.png"), dpi=150, bbox_inches="tight")
     plt.close(fig)
     return table
 
 
-# ---- 2. real -> degseq -> er steps ------------------------------------------
+# ---- 2. steps: real/shuffled, real/degseq, degseq/er ------------------------------
 
-def steps(means):
+COMPARISONS = [("partner_effect", "real", "shuffled", "real - shuffled: fixed partners"),
+               ("structure_effect", "real", "degseq", "real - degseq: structure beyond degree"),
+               ("degree_effect", "degseq", "er", "degseq - ER: degree heterogeneity")]
+
+
+def steps(bm):
+    """Paired differences per family, regime and beta, with a 95% CI over reps.
+    Per rep: mean over the regime's (b, a) cells of graph1 - graph2 (same seed)."""
+    wide = bm.pivot_table(index=["family", "regime", "b", "beta", "a_fraction", "rep"],
+                          columns="graph_type", values="cooperation").reset_index()
     rows = []
-    keys = ["family", "agent", "b", "beta", "a_fraction"]
-    for key, group in means.groupby(keys):
-        by_type = {}
-        for _, row in group.iterrows():
-            by_type[row["graph_type"]] = row["cooperation"]
-        # each comparison is computed whenever its own two graphs are in the sweep
-        row = dict(zip(keys, key))
-        row["partner_effect"] = np.nan
-        row["structure_effect"] = np.nan
-        row["degree_effect"] = np.nan
-        if "real" in by_type and "shuffled" in by_type:
-            row["partner_effect"] = by_type["real"] - by_type["shuffled"]
-        if "real" in by_type and "degseq" in by_type:
-            row["structure_effect"] = by_type["real"] - by_type["degseq"]
-        if "degseq" in by_type and "er" in by_type:
-            row["degree_effect"] = by_type["degseq"] - by_type["er"]
-        has_any = False
-        for name in ["partner_effect", "structure_effect", "degree_effect"]:
-            if not np.isnan(row[name]):
-                has_any = True
-        if has_any:
-            rows.append(row)
+    for name, first, second, title in COMPARISONS:
+        if first not in wide.columns or second not in wide.columns:
+            continue
+        wide["difference"] = wide[first] - wide[second]
+        per_rep = wide.groupby(["family", "regime", "beta", "rep"], as_index=False)["difference"].mean()
+        for (family, shown, beta), group in per_rep.groupby(["family", "regime", "beta"]):
+            mean, half = t_interval(group["difference"])
+            rows.append({"comparison": name, "family": family, "regime": shown, "beta": beta,
+                         "difference": mean, "ci": half, "n_reps": len(group)})
     if not rows:
         print("steps: no comparable graph pairs in the sweep, skipped")
         return None
     table = pd.DataFrame(rows)
     table.to_csv(out_path("_steps.csv"), index=False)
 
-    # one panel per comparison that has data (e.g. no ER in the main sweep -> no degree panel)
-    panels = []
-    for column, title in [("partner_effect", "real - shuffled: fixed partners"),
-                          ("structure_effect", "real - degseq: structure beyond degree"),
-                          ("degree_effect", "degseq - ER: degree heterogeneity")]:
-        if table[column].notna().any():
-            panels.append((column, title))
-    fig, axes = plt.subplots(1, len(panels), figsize=(6.5 * len(panels), 4.5), sharey=True, squeeze=False)
-    for ax, (column, title) in zip(axes[0], panels):
-        plot_vs_beta(ax, table.dropna(subset=[column]), column, "")
-        ax.set_title(title)
-        ax.axhline(0, color="black", linewidth=0.5)
-    axes[0][0].set_ylabel("cooperation difference (mean over families)")
+    comparisons = []
+    for name, first, second, title in COMPARISONS:
+        if name in set(table["comparison"]):
+            comparisons.append((name, title))
+    fig, axes = plt.subplots(len(comparisons), len(SHOWN_REGIMES),
+                             figsize=(6 * len(SHOWN_REGIMES), 3.8 * len(comparisons)), squeeze=False)
+    fig.subplots_adjust(hspace=0.45)
+    for r, (name, title) in enumerate(comparisons):
+        for c, shown in enumerate(SHOWN_REGIMES):
+            ax = axes[r][c]
+            part = table[(table["comparison"] == name) & (table["regime"] == shown)]
+            for family in sorted(part["family"].unique()):
+                line = part[part["family"] == family].sort_values("beta")
+                ax.errorbar(line["beta"], line["difference"], yerr=line["ci"], marker="o",
+                            markersize=3, capsize=2, label=family)
+            ax.axhline(0, color="black", linewidth=0.5)
+            ax.set_xscale("log")
+            ax.set_xlabel("beta")
+            ax.set_title(f"{title}\nregime {shown}", fontsize=9)
+            ax.set_ylabel("cooperation difference")
     axes[0][-1].legend(fontsize=7)
+    fig.suptitle("BM (average payoff): mean over b and a within regime, 95% CI over reps")
     fig.savefig(out_path("_steps.png"), dpi=150, bbox_inches="tight")
     plt.close(fig)
     return table
@@ -265,17 +235,42 @@ def steps(means):
 
 # ---- 3. regression across graphs ---------------------------------------------
 
-def regression(means):
-    topology = pd.read_csv(os.path.join(RESULTS_DIR, "topology_table.csv"))
-    topology = topology.rename(columns={"name": "graph"})
-    data = means.merge(topology[["graph"] + FEATURES], on="graph")
+def topology_features():
+    """Features per graph name used in the sweep. "<real>_degseq" = mean of its 5
+    rewirings (rep r ran on rewiring r % 5)."""
+    topology = pd.read_csv(os.path.join(RESULTS_DIR, "topology_table.csv")).set_index("name")
+    rows = []
+    for name in topology.index:
+        if name.endswith("_degseq") or "_rewired" in name:
+            continue
+        row = {"graph": name}
+        for feature in FEATURES:
+            row[feature] = topology.loc[name, feature]
+        rows.append(row)
+    for real in REAL_FILES:
+        names = rewired_names(real)
+        missing = [n for n in names if n not in topology.index]
+        if missing:
+            print("topology table has no", missing, "- run python src/networks.py")
+            continue
+        row = {"graph": real + "_degseq"}
+        for feature in FEATURES:
+            row[feature] = topology.loc[names, feature].mean()
+        rows.append(row)
+    return pd.DataFrame(rows)
+
+
+def regression(bm):
+    means = bm[bm["graph_type"] != "shuffled"].groupby(
+        ["graph", "b", "beta", "a_fraction", "regime"], as_index=False)["cooperation"].mean()
+    data = means.merge(topology_features(), on="graph")
     n_graphs = data["graph"].nunique()
-    if n_graphs < len(FEATURES) + 2:
-        print(f"regression: only {n_graphs} graphs, need {len(FEATURES) + 2}+, skipped")
+    if n_graphs < len(FEATURES) + 3:
+        print(f"regression: only {n_graphs} graphs, need {len(FEATURES) + 3}+, skipped")
         return None
 
     rows = []
-    for key, group in data.groupby(["agent", "b", "beta", "a_fraction"]):
+    for key, group in data.groupby(["b", "beta", "a_fraction", "regime"]):
         X = group[FEATURES].copy()
         for feature in FEATURES:
             # standardise so coefficients are comparable: effect of +1 std of the feature
@@ -284,20 +279,30 @@ def regression(means):
         fit = sm.OLS(group["cooperation"], X).fit()
         intervals = fit.conf_int()
         for feature in FEATURES:
-            rows.append({"agent": key[0], "b": key[1], "beta": key[2], "a_fraction": key[3],
+            rows.append({"b": key[0], "beta": key[1], "a_fraction": key[2], "regime": key[3],
                          "feature": feature, "coef": fit.params[feature],
                          "ci_low": intervals.loc[feature, 0], "ci_high": intervals.loc[feature, 1],
                          "r_squared": fit.rsquared, "n_graphs": len(group)})
     table = pd.DataFrame(rows)
     table.to_csv(out_path("_regression.csv"), index=False)
 
-    fig, axes = plt.subplots(1, len(FEATURES), figsize=(4.2 * len(FEATURES), 4), sharey=True)
-    for ax, feature in zip(axes, FEATURES):
-        plot_vs_beta(ax, table[table["feature"] == feature], "coef", "")
-        ax.axhline(0, color="black", linewidth=0.5)
-        ax.set_title(feature)
-    axes[0].set_ylabel("effect of +1 std on cooperation")
-    axes[-1].legend(fontsize=7)
+    fig, axes = plt.subplots(len(SHOWN_REGIMES), len(FEATURES),
+                             figsize=(4.2 * len(FEATURES), 3.8 * len(SHOWN_REGIMES)), sharey=True, squeeze=False)
+    for r, shown in enumerate(SHOWN_REGIMES):
+        for c, feature in enumerate(FEATURES):
+            ax = axes[r][c]
+            part = table[(table["regime"] == shown) & (table["feature"] == feature)]
+            for b in sorted(part["b"].unique()):
+                line = part[part["b"] == b].groupby("beta")["coef"].mean()
+                ax.plot(line.index, line.values, marker="o", markersize=3, label=f"b={b:g}")
+            ax.axhline(0, color="black", linewidth=0.5)
+            ax.set_xscale("log")
+            ax.set_xlabel("beta")
+            ax.set_title(f"{feature}, regime {shown}", fontsize=9)
+    axes[0][0].set_ylabel("effect of +1 std on cooperation")
+    axes[0][-1].legend(fontsize=7)
+    fig.suptitle(f"BM (average payoff): regression across {n_graphs} graphs, mean coef over a. "
+                 f"Descriptive (features correlated).")
     fig.savefig(out_path("_regression.png"), dpi=150, bbox_inches="tight")
     plt.close(fig)
     return table
@@ -310,58 +315,71 @@ def node_file_name(run_id):
     return run_id.replace("|", "__").replace("=", "-") + ".npy"
 
 
-def node_level(runs):
+def node_level(bm):
+    """Rep 0 of real and degseq graphs (degseq rep 0 = rewiring 0)."""
     nodes_dir = out_path("_nodes")
     rows = []
-    for graph in REAL_FILES:
-        part = runs[(runs["graph"] == graph) & (runs["rep"] == 0)]
-        if len(part) == 0:
-            continue
-        G = load_graph(graph)
-        degrees = []
-        for node in range(G.number_of_nodes()):
-            degrees.append(G.degree(node))
-        local_clustering_dict = nx.clustering(G)
-        local_clustering = []
-        for node in range(G.number_of_nodes()):
-            local_clustering.append(local_clustering_dict[node])
-        for _, run in part.iterrows():
-            path = os.path.join(nodes_dir, node_file_name(run["run_id"]))
-            if not os.path.exists(path):
+    for family in REAL_FILES:
+        for graph, source in [(family, family), (family + "_degseq", rewired_names(family)[0])]:
+            part = bm[(bm["graph"] == graph) & (bm["rep"] == 0)]
+            if len(part) == 0:
                 continue
-            coop = np.load(path)
-            # Spearman: rank correlation, robust to heavy-tailed degrees
-            rows.append({"graph": graph, "agent": run["agent"], "b": run["b"],
-                         "beta": run["beta"], "a_fraction": run["a_fraction"],
-                         "corr_degree": stats.spearmanr(coop, degrees).statistic,
-                         "corr_clustering": stats.spearmanr(coop, local_clustering).statistic})
+            G = load_graph(source)
+            degrees = []
+            local_clustering = []
+            clustering_dict = nx.clustering(G)
+            for node in range(G.number_of_nodes()):
+                degrees.append(G.degree(node))
+                local_clustering.append(clustering_dict[node])
+            for _, run in part.iterrows():
+                path = os.path.join(nodes_dir, node_file_name(run["run_id"]))
+                if not os.path.exists(path):
+                    continue
+                coop = np.load(path)
+                # Spearman: rank correlation, robust to heavy-tailed degrees
+                rows.append({"family": family, "graph_type": run["graph_type"], "b": run["b"],
+                             "beta": run["beta"], "a_fraction": run["a_fraction"],
+                             "regime": run["regime"],
+                             "corr_degree": stats.spearmanr(coop, degrees).statistic,
+                             "corr_clustering": stats.spearmanr(coop, local_clustering).statistic})
     if not rows:
         print("node level: no node files found, skipped")
         return None
     table = pd.DataFrame(rows)
     table.to_csv(out_path("_node_level.csv"), index=False)
 
-    fig, axes = plt.subplots(1, 2, figsize=(13, 4.5), sharey=True)
-    plot_vs_beta(axes[0], table, "corr_degree", "Spearman correlation (mean over real graphs)")
-    axes[0].set_title("node cooperation vs degree")
-    plot_vs_beta(axes[1], table, "corr_clustering", "")
-    axes[1].set_title("node cooperation vs local clustering")
-    for ax in axes:
-        ax.axhline(0, color="black", linewidth=0.5)
-    axes[1].legend(fontsize=7)
+    fig, axes = plt.subplots(2, len(SHOWN_REGIMES), figsize=(6.5 * len(SHOWN_REGIMES), 8), sharey=True)
+    for c, shown in enumerate(SHOWN_REGIMES):
+        for r, (column, title) in enumerate([("corr_degree", "node cooperation vs degree"),
+                                             ("corr_clustering", "node cooperation vs local clustering")]):
+            ax = axes[r][c]
+            part = table[table["regime"] == shown]
+            for (family, kind), group in part.groupby(["family", "graph_type"]):
+                line = group.groupby("beta")[column].mean()
+                style = "-" if kind == "real" else ":"
+                ax.plot(line.index, line.values, style, marker="o", markersize=3, label=f"{family} {kind}")
+            ax.axhline(0, color="black", linewidth=0.5)
+            ax.set_xscale("log")
+            ax.set_xlabel("beta")
+            ax.set_title(f"{title}, regime {shown}", fontsize=9)
+            ax.set_ylabel("Spearman correlation (rep 0, mean over b, a)")
+    axes[0][-1].legend(fontsize=6)
     fig.savefig(out_path("_node_level.png"), dpi=150, bbox_inches="tight")
     plt.close(fig)
     return table
 
 
 def main():
-    runs, means = load_condition_means()
-    print(f"{len(runs)} runs, {means['graph'].nunique()} graphs, {len(means)} condition means")
-    diagnostics(runs)
-    sensitivity(means)
-    steps(means)
-    regression(means)
-    node_level(runs)
+    bm = load_bm_runs("average")
+    print(f"{len(bm)} BM average-payoff runs, {bm['graph'].nunique()} graphs")
+    diagnostics(bm, "average")
+    accumulated = load_bm_runs("accumulated")
+    if len(accumulated) > 0:
+        diagnostics(accumulated, "accumulated")
+    sensitivity(bm)
+    steps(bm)
+    regression(bm)
+    node_level(bm)
     print("saved tables and figures in", RESULTS_DIR)
 
 

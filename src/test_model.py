@@ -146,6 +146,19 @@ def test_fermi_huge_payoff_gap_does_not_overflow():
     assert a.strategy == "C"  # much worse neighbour is never copied
 
 
+def test_fermi_mutation_flips_strategy():
+    # mutation = 1: every strategy flips after imitation. Both C, same payoff ->
+    # copying keeps C, then the flip makes D.
+    G = nx.path_graph(2)
+    model = CooperationModel(G, "fermi", initial_coop=1.0, mutation=1.0, seed=1)
+    model.step()
+    assert all(p.strategy == "D" for p in model.players)
+    # mutation = 0 (default): nobody ever changes in an all-C population
+    model = CooperationModel(G, "fermi", initial_coop=1.0, seed=1)
+    model.run(20)
+    assert all(p.strategy == "C" for p in model.players)
+
+
 def test_fermi_initial_strategies():
     G = nx.cycle_graph(20)
     all_c = CooperationModel(G, "fermi", initial_coop=1.0, seed=1)

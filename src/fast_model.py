@@ -108,7 +108,7 @@ def fermi_copy_probability(payoff, other, kappa):
 
 
 def run_fermi(A, degree, b, kappa, steps, payoff_scheme="average", record_from=0,
-              initial_coop=0.5, shuffle_seats=False, seed=None):
+              initial_coop=0.5, shuffle_seats=False, mutation=0.0, seed=None):
     """One Fermi imitation run. Same arguments as CooperationModel (agent_type="fermi").
     Returns curve and node_cooperation like run_bm (no p: Fermi players have no propensity)."""
     rng = np.random.default_rng(seed)
@@ -131,6 +131,10 @@ def run_fermi(A, degree, b, kappa, steps, payoff_scheme="average", record_from=0
         other = random_neighbours(A, degree, rng)
         copies = rng.random(n) < fermi_copy_probability(payoff, other, kappa)
         coop = np.where(copies, coop[other], coop)
+        if mutation > 0:
+            # strategy flips with probability mutation (same as FermiAgent.update)
+            flips = rng.random(n) < mutation
+            coop = coop != flips
 
         if shuffle_seats:
             new_order = rng.permutation(n)

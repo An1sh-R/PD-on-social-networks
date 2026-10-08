@@ -32,11 +32,14 @@ Experimentation/
     check_fast_model.py  fast_model vs model: exact + 20-seed comparison      [done]
     test_model.py     simple asserts for model.py (python src/test_model.py)  [done]
     validate_bm.py    BM vs Ezaki & Masuda 2017 rings -> results/            [done]
+    validate_fermi.py Fermi avg vs accumulated vs Ichinose & Sayama 2017      [done]
     pilot.py          coarse BM beta x A x b scan on LastFM -> results/       [done]
-    run.py            parameter sweep -> results/ (--test = tiny grid)        [done]
+    pilot_payoffs.py  are 1500 steps enough for Fermi + BM accumulated?       [done]
+    run.py            sweep v2: BM + Fermi, avg + accumulated, 30 graphs (--test) [ready]
     structure_test.py mentor design: original vs rewired vs shuffled seats  [done]
     structure_summary.py  Welch CIs, +/-0.01 equivalence verdict, figures     [done]
-    analyze.py        main sweep: diagnostics, sensitivity, real/shuffled/degseq steps, regression, node level [done]
+    analyze.py        BM average: diagnostics, sensitivity, steps per family + regime, regression, node level [ready]
+    analyze_payoffs.py  accumulated - average (BM, Fermi), Fermi diagnostics, which features predict it [ready]
   graphs/           network drawings (one png per real graph)
   results/          csv, result figures
 ```

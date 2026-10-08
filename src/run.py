@@ -1,95 +1,118 @@
-"""Main parameter sweep. One row per run in results/sweep_runs.csv.
+"""Parameter sweep, version 2: BM and Fermi, average and accumulated payoffs.
+One row per run in results/sweep_v2_runs.csv.
 
 Run from project root:
     python src/run.py           full sweep (long, can be stopped and restarted)
-    python src/run.py --test    tiny grid, 2 small graphs, few steps (checks the code)
+    python src/run.py --test    tiny grid, 2 small families, few steps (checks the code)
 
 Safe to stop any time: every finished run is written straight to the CSV, and a
 restart skips runs already in it.
 
-Graphs: for each of the 5 real networks: real, degseq, shuffled (see GRAPHS).
+Graphs: for each of the 5 real networks: real, degseq, shuffled, er, ba, ws.
 "<real>_shuffled" = the real graph, but players get new random seats after every
 round (mentor's idea): same network, no fixed partners.
 
-Arms (see ResearchQ/design.md):
-- bm                 Bush-Mosteller, full beta x aspiration grid
-- fermi_average      Fermi imitation, average payoff (fair comparison with BM)
-- fermi_accumulated  Fermi imitation, total payoff (classic setup)
+Arms (agent x payoff_scheme, see ResearchQ/design.md):
+- bm average          Bush-Mosteller, full beta x aspiration grid (main sweep)
+- bm accumulated      payoff summed over neighbours, aspiration A * k of the seat
+- fermi average       Fermi imitation, kappa grid, mutation 0.01 (3000 steps)
+- fermi accumulated   same, summed payoff
+
+Accumulated payoffs are scaled by the graph's mean degree <k> (decided 2026-10-08):
+BM runs with beta / <k>, Fermi with kappa * <k>. Then a player of average degree
+has the same sensitivity in both schemes; only the spread across degrees differs
+(hubs more, leaves less). Without it, "accumulated - average" would mostly measure
+<k> (k times higher sensitivity). beta and kappa columns hold the grid values,
+beta_used and kappa_used what the model got.
 
 Aspiration is given as a fraction of b (A = a * b): the pilot showed the
 interesting band moves with b.
 
-BM runs use the numpy version (fast_model.py, ~10-20x faster). Fermi still uses
-the Mesa model (model.py). check_fast_model.py checks numpy against Mesa.
+All runs use the numpy models (fast_model.py), checked against Mesa by check_fast_model.py.
 """
 import csv
 import os
+import shutil
 import sys
 import time
 from multiprocessing import Pool
 
 import numpy as np
 
-from fast_model import neighbour_matrix, run_bm
-from model import CooperationModel
-from networks import REAL_FILES, RESULTS_DIR, all_names, load_graph, rewired_names
+from fast_model import neighbour_matrix, run_bm, run_fermi
+from networks import REAL_FILES, RESULTS_DIR, load_graph, rewired_names
 
 TEST = "--test" in sys.argv
 
 # ---- grid ------------------------------------------------------------------
-# Decided: epsilon 0.05, b = 1.1-2.0, full beta x a grid, 10 reps everywhere.
 if TEST:
-    # 10 graphs: enough for analyze.py to test its regression and real/degseq/er steps
-    GRAPHS = ["lastfm", "lastfm_er", "lastfm_ba", "lastfm_ws", "lastfm_degseq",
-              "lastfm_shuffled", "twitch", "twitch_er", "twitch_degseq", "twitch_shuffled"]
-    BETAS = [0.1, 10.0]
-    A_FRACTIONS = [0.3, 0.7]  # beta=10, a=0.7, b=2 oscillates: tests that flag
-    TEMPTATIONS = [2.0]
+    FAMILIES = ["lastfm", "twitch"]
+    BM_AVERAGE_BETAS = [0.1, 10.0]
+    BM_AVERAGE_A = [0.3, 0.7]  # beta=10, a=0.7, b=2 oscillates: tests that flag
+    BM_ACCUMULATED_BETAS = [0.1, 10.0]
+    BM_ACCUMULATED_A = [0.3]
+    BM_TEMPTATIONS = [2.0]
+    KAPPAS = [0.1, 10.0]
+    MUTATIONS = [0.01]
+    FERMI_TEMPTATIONS = [1.05]
     REPS = 2
     STEPS = 300
     WINDOW = 100
-    OUT_NAME = "sweep_test"
+    FERMI_STEPS = 400
+    FERMI_WINDOW = 150
+    OUT_NAME = "sweep_v2_test"
 else:
-    # Decided 2026-10-07: real, degseq, shuffled only (no ER/BA/WS). Small networks
-    # first, so their results are complete before the slow GitHub/Deezer runs.
-    NETWORK_ORDER = ["facebook", "lastfm", "twitch", "deezer", "github"]
-    GRAPHS = []
-    for real_name in NETWORK_ORDER:
-        GRAPHS.append(real_name)
-        GRAPHS.append(real_name + "_degseq")
-        GRAPHS.append(real_name + "_shuffled")
-    # kept on purpose: beta=0.01 still drifts at 1000 steps, a=0.9 is the dead zone (flag in analysis)
-    BETAS = [0.01, 0.1, 0.3, 0.6, 1.0, 2.0, 3.0, 5.0, 10.0, 20.0, 30.0, 100.0]
-    A_FRACTIONS = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
-    TEMPTATIONS = [1.1, 1.3, 1.5, 1.7, 2.0]
-    # 10 everywhere (decided 2026-10-07): affordable with fast_model. The extra reps in the
-    # high-beta band were dropped: the pilot "bistability" there was a period-2 oscillation.
+    # small networks first, so their results are complete before GitHub/Deezer
+    FAMILIES = ["facebook", "lastfm", "twitch", "deezer", "github"]
+    # BM average: same grid as the main sweep (its real/shuffled runs are imported).
+    # beta=0.01 still drifts, a=0.9 is the dead zone: kept, flagged in the analysis.
+    BM_AVERAGE_BETAS = [0.01, 0.1, 0.3, 0.6, 1.0, 2.0, 3.0, 5.0, 10.0, 20.0, 30.0, 100.0]
+    BM_AVERAGE_A = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
+    # BM accumulated: drop beta=0.01 (too slow), a=0 (nobody ever unhappy), a=0.9 (dead zone)
+    BM_ACCUMULATED_BETAS = [0.1, 0.3, 0.6, 1.0, 2.0, 3.0, 5.0, 10.0, 20.0, 30.0, 100.0]
+    BM_ACCUMULATED_A = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8]
+    BM_TEMPTATIONS = [1.1, 1.3, 1.5, 1.7, 2.0]
+    KAPPAS = [0.01, 0.1, 1.0, 10.0]
+    # Mutation 0.01: no getting stuck in all-C / all-D (like BM's epsilon). Classic
+    # Fermi (mutation 0) dropped 2026-10-08: pilot_payoffs.py showed it has not
+    # settled even at 4000 steps (seeds split 0.28 / 1.0 / 1.0), so a fixed window
+    # would only catch the transient.
+    MUTATIONS = [0.01]
+    # Fermi with average payoff is near 0 already at b = 1.05: values near 1 needed
+    FERMI_TEMPTATIONS = [1.02, 1.05, 1.1, 1.3, 1.5, 1.7, 2.0]
     REPS = 10
-    STEPS = 1500
-    WINDOW = 500  # final cooperation = mean over the last 500 steps (eps=0.05 pilot: most flat by ~600)
-    OUT_NAME = "sweep"
+    STEPS = 1500  # BM: settled by then (pilot.py, pilot_payoffs.py)
+    WINDOW = 500  # final cooperation = mean over the last 500 steps
+    # Fermi with accumulated payoff fluctuates slowly (pilot_payoffs.py: seeds differ
+    # ~0.02, GitHub still drifting ~+0.015 after 1500 steps): longer run, longer window
+    FERMI_STEPS = 3000
+    FERMI_WINDOW = 1000
+    OUT_NAME = "sweep_v2"
 
-RUN_FERMI = False  # BM only for now; Fermi baseline later (set True, rerun: done runs are skipped)
-EPSILON = 0.05  # slip = flip the intended action, as Ezaki & Masuda 2017
-KAPPA = 0.1
-# 8 processes on this 10-core / 16-thread laptop: full sweep ~5 h with fast_model
-# (measured 2026-10-07). 12 chosen 2026-10-08 (untested: gain over 8 may be small).
+GRAPHS = []
+for family in FAMILIES:
+    for kind in ["", "_degseq", "_shuffled", "_er", "_ba", "_ws"]:
+        GRAPHS.append(family + kind)
+
+EPSILON = 0.05  # BM slip = flip the intended action, as Ezaki & Masuda 2017
 N_PROCESSES = 12
-N_BUILD_PROCESSES = 3  # building rewired graphs needs more memory per process
+OLD_SWEEP = "sweep"  # main BM sweep (2026-10-08): real + shuffled rows are reused
 
 RUNS_PATH = os.path.join(RESULTS_DIR, OUT_NAME + "_runs.csv")
 NODES_DIR = os.path.join(RESULTS_DIR, OUT_NAME + "_nodes")  # per-node cooperation
 
-COLUMNS = ["run_id", "graph", "family", "graph_type", "agent", "b", "beta",
-           "a_fraction", "aspiration", "epsilon", "kappa", "rep", "source_graph", "steps",
-           "cooperation", "cooperation_std", "drift", "even_odd_gap", "mean_p", "seconds"]
+COLUMNS = ["run_id", "graph", "family", "graph_type", "agent", "payoff_scheme", "b", "beta",
+           "a_fraction", "aspiration", "epsilon", "kappa", "mutation", "mean_degree",
+           "beta_used", "kappa_used", "rep", "source_graph", "steps", "window", "cooperation",
+           "cooperation_std", "drift", "even_odd_gap", "mean_p", "absorbed_at", "seconds"]
 
 
 # ---- jobs ------------------------------------------------------------------
 
 def make_run_id(job):
-    return (f"{job['graph']}|{job['agent']}|b={job['b']}|beta={job['beta']}"
-            f"|a={job['a_fraction']}|rep={job['rep']}")
+    return (f"{job['graph']}|{job['agent']}|{job['payoff_scheme']}|b={job['b']}"
+            f"|beta={job['beta']}|a={job['a_fraction']}|kappa={job['kappa']}"
+            f"|mu={job['mutation']}|rep={job['rep']}")
 
 
 def source_graph(graph, rep):
@@ -105,23 +128,38 @@ def source_graph(graph, rep):
     return graph
 
 
+def bm_jobs(graph, scheme, betas, a_fractions):
+    jobs = []
+    for b in BM_TEMPTATIONS:
+        for beta in betas:
+            for a_fraction in a_fractions:
+                for rep in range(REPS):
+                    jobs.append({"graph": graph, "agent": "bm", "payoff_scheme": scheme, "b": b,
+                                 "beta": beta, "a_fraction": a_fraction, "kappa": "-",
+                                 "mutation": "-", "rep": rep})
+    return jobs
+
+
+def fermi_jobs(graph):
+    jobs = []
+    for scheme in ["average", "accumulated"]:
+        for b in FERMI_TEMPTATIONS:
+            for kappa in KAPPAS:
+                for mutation in MUTATIONS:
+                    for rep in range(REPS):
+                        jobs.append({"graph": graph, "agent": "fermi", "payoff_scheme": scheme,
+                                     "b": b, "beta": "-", "a_fraction": "-", "kappa": kappa,
+                                     "mutation": mutation, "rep": rep})
+    return jobs
+
+
 def make_jobs():
     """Every run in the sweep, grouped by graph (workers then reuse the loaded graph)."""
     jobs = []
     for graph in GRAPHS:
-        for b in TEMPTATIONS:
-            for beta in BETAS:
-                for a_fraction in A_FRACTIONS:
-                    for rep in range(REPS):
-                        jobs.append({"graph": graph, "agent": "bm", "b": b, "beta": beta,
-                                     "a_fraction": a_fraction, "rep": rep})
-            if not RUN_FERMI:
-                continue
-            # Fermi does not use beta or aspiration
-            for rep in range(REPS):
-                for agent in ["fermi_average", "fermi_accumulated"]:
-                    jobs.append({"graph": graph, "agent": agent, "b": b, "beta": "-",
-                                 "a_fraction": "-", "rep": rep})
+        jobs.extend(bm_jobs(graph, "average", BM_AVERAGE_BETAS, BM_AVERAGE_A))
+        jobs.extend(bm_jobs(graph, "accumulated", BM_ACCUMULATED_BETAS, BM_ACCUMULATED_A))
+        jobs.extend(fermi_jobs(graph))
     for job in jobs:
         job["run_id"] = make_run_id(job)
         job["source_graph"] = source_graph(job["graph"], job["rep"])
@@ -156,21 +194,18 @@ def finished_run_ids():
 
 # ---- one run ---------------------------------------------------------------
 
-# Each worker keeps only the last graph it loaded: holding all 25 graphs in
+# Each worker keeps only the last graph it loaded: holding all graphs in
 # every worker would use several GB of memory.
 cached_name = None
-cached_graph = None
-cached_matrix = None  # (A, degree) for the numpy BM model
+cached_matrix = None  # (A, degree)
 
 
-def get_graph(name):
-    """Returns the networkx graph and its (A, degree) neighbour matrix."""
-    global cached_name, cached_graph, cached_matrix
+def get_matrix(name):
+    global cached_name, cached_matrix
     if name != cached_name:
-        cached_graph = load_graph(name)
-        cached_matrix = neighbour_matrix(cached_graph)
+        cached_matrix = neighbour_matrix(load_graph(name))
         cached_name = name
-    return cached_graph, cached_matrix
+    return cached_matrix
 
 
 def graph_type(name):
@@ -179,30 +214,53 @@ def graph_type(name):
     return name.rsplit("_", 1)[1]
 
 
+def keeps_node_values(job):
+    """Per-node cooperation: real and degseq graphs, first rep only (disk use)."""
+    return job["rep"] == 0 and graph_type(job["graph"]) in ("real", "degseq")
+
+
 def run_one(job):
     start = time.time()
-    G, (A, degree) = get_graph(job["source_graph"])
-    record_from = STEPS - WINDOW
+    A, degree = get_matrix(job["source_graph"])
+    mean_degree = float(degree.mean())
+    steps = STEPS
+    window_length = WINDOW
+    if job["agent"] == "fermi":
+        steps = FERMI_STEPS
+        window_length = FERMI_WINDOW
+    record_from = steps - window_length
     shuffle = job["graph"].endswith("_shuffled")
+    scheme = job["payoff_scheme"]
+    beta_used = "-"
+    kappa_used = "-"
 
     if job["agent"] == "bm":
         aspiration = round(job["a_fraction"] * job["b"], 6)  # avoid 0.44999999999999996
-        curve, p, node_cooperation = run_bm(A, degree, job["b"], job["beta"], aspiration,
-                                            EPSILON, STEPS, record_from=record_from,
-                                            shuffle_seats=shuffle, seed=job["rep"])
+        beta_used = job["beta"]
+        if scheme == "accumulated":
+            beta_used = job["beta"] / mean_degree  # mean-degree normalisation (docstring)
+        curve, p, node_cooperation = run_bm(A, degree, job["b"], beta_used, aspiration,
+                                            EPSILON, steps, record_from=record_from,
+                                            shuffle_seats=shuffle, payoff_scheme=scheme,
+                                            seed=job["rep"])
         mean_p = float(p.mean())
     else:
         aspiration = "-"
-        scheme = job["agent"].replace("fermi_", "")
-        model = CooperationModel(G, "fermi", b=job["b"], payoff_scheme=scheme,
-                                 kappa=KAPPA, record_from=record_from,
-                                 shuffle_seats=shuffle, seed=job["rep"])
-        model.run(STEPS)
-        curve = model.datacollector.model_vars["cooperation"]
-        node_cooperation = model.node_cooperation()
+        kappa_used = job["kappa"]
+        if scheme == "accumulated":
+            kappa_used = job["kappa"] * mean_degree  # mean-degree normalisation (docstring)
+        curve, node_cooperation = run_fermi(A, degree, job["b"], kappa_used, steps,
+                                            payoff_scheme=scheme, record_from=record_from,
+                                            shuffle_seats=shuffle, mutation=job["mutation"],
+                                            seed=job["rep"])
         mean_p = "-"
 
-    window = np.array(curve[record_from:])
+    window = curve[record_from:]
+    # first round where everyone plays the same (Fermi without mutation can get stuck)
+    everyone_same = np.where((curve == 0) | (curve == 1))[0]
+    absorbed_at = -1
+    if len(everyone_same) > 0:
+        absorbed_at = int(everyone_same[0])
 
     row = {
         "run_id": job["run_id"],
@@ -210,30 +268,34 @@ def run_one(job):
         "family": job["graph"].split("_")[0],
         "graph_type": graph_type(job["graph"]),
         "agent": job["agent"],
+        "payoff_scheme": scheme,
         "b": job["b"],
         "beta": job["beta"],
         "a_fraction": job["a_fraction"],
         "aspiration": aspiration,
         "epsilon": EPSILON if job["agent"] == "bm" else "-",
-        "kappa": KAPPA if job["agent"] != "bm" else "-",
+        "kappa": job["kappa"],
+        "mutation": job["mutation"],
+        "mean_degree": round(mean_degree, 4),
+        "beta_used": beta_used,
+        "kappa_used": kappa_used,
         "rep": job["rep"],
         "source_graph": job["source_graph"],
-        "steps": STEPS,
+        "steps": steps,
+        "window": window_length,
         "cooperation": float(window.mean()),
         "cooperation_std": float(window.std()),
-        # second half of the window minus first half: ~0 if the run had settled,
-        # big if it was still moving (slow convergence: longer runs needed)
-        "drift": float(window[WINDOW // 2:].mean() - window[:WINDOW // 2].mean()),
-        # every-other-round cooperation gap: big if the whole population flips C <-> D
-        # each round (period-2 oscillation, high beta). The mean above hides it.
+        # second half of the window minus first half: ~0 if the run had settled
+        "drift": float(window[window_length // 2:].mean() - window[:window_length // 2].mean()),
+        # every-other-round gap: big if the whole population flips C <-> D each round
         "even_odd_gap": float(abs(window[0::2].mean() - window[1::2].mean())),
         "mean_p": mean_p,
+        "absorbed_at": absorbed_at,
         "seconds": round(time.time() - start, 2),
     }
 
-    # Per-node cooperation: real graphs, first rep only (keeps disk use small).
     node_values = None
-    if job["graph"] in REAL_FILES and job["rep"] == 0:
+    if keeps_node_values(job):
         node_values = np.array(node_cooperation, dtype=np.float32)
     return row, node_values
 
@@ -251,6 +313,60 @@ def save_node_file(run_id, node_values):
     os.replace(temp_path, path)
 
 
+# ---- reuse the main sweep ----------------------------------------------------
+
+def import_old_sweep(jobs):
+    """Copy BM average-payoff runs on real and shuffled graphs from the main sweep.
+    Same code path and seeds as now (only degseq changed: its graphs were rebuilt
+    connected on 2026-10-08), so these runs would come out identical. Done once,
+    before the new CSV exists. Saves ~4 h."""
+    old_path = os.path.join(RESULTS_DIR, OLD_SWEEP + "_runs.csv")
+    if TEST or os.path.exists(RUNS_PATH) or not os.path.exists(old_path):
+        return
+    if STEPS != 1500 or WINDOW != 500:
+        print("not importing the main sweep: it used 1500 steps / window 500")
+        return
+    wanted = {}
+    for job in jobs:
+        if job["agent"] == "bm" and job["payoff_scheme"] == "average":
+            if graph_type(job["graph"]) in ("real", "shuffled"):
+                old_id = (f"{job['graph']}|bm|b={job['b']}|beta={job['beta']}"
+                          f"|a={job['a_fraction']}|rep={job['rep']}")
+                wanted[old_id] = job
+    mean_degrees = {}
+    for family in FAMILIES:
+        A, degree = neighbour_matrix(load_graph(family))
+        mean_degrees[family] = round(float(degree.mean()), 4)
+
+    old_nodes_dir = os.path.join(RESULTS_DIR, OLD_SWEEP + "_nodes")
+    n_copied = 0
+    with open(old_path, newline="") as old_file, open(RUNS_PATH, "w", newline="") as new_file:
+        writer = csv.DictWriter(new_file, fieldnames=COLUMNS)
+        writer.writeheader()
+        for old in csv.DictReader(old_file):
+            if old["run_id"] not in wanted:
+                continue
+            job = wanted[old["run_id"]]
+            row = {}
+            for column in COLUMNS:
+                row[column] = old.get(column, "-")
+            row["run_id"] = job["run_id"]
+            row["payoff_scheme"] = "average"
+            row["kappa"] = "-"
+            row["mutation"] = "-"
+            row["mean_degree"] = mean_degrees[old["family"]]
+            row["beta_used"] = old["beta"]
+            row["kappa_used"] = "-"
+            row["absorbed_at"] = "-"  # not recorded then (BM never gets stuck: epsilon)
+            row["window"] = 500
+            writer.writerow(row)
+            n_copied += 1
+            old_node_path = os.path.join(old_nodes_dir, node_file_name(old["run_id"]))
+            if keeps_node_values(job) and os.path.exists(old_node_path):
+                shutil.copyfile(old_node_path, os.path.join(NODES_DIR, node_file_name(job["run_id"])))
+    print(f"imported {n_copied} BM average runs (real + shuffled) from {old_path}")
+
+
 # ---- main ------------------------------------------------------------------
 
 def build_graph(name):
@@ -265,8 +381,8 @@ def build_missing_graphs(jobs):
     for job in jobs:
         if job["source_graph"] not in needed:
             needed.append(job["source_graph"])
-    print(f"making sure {len(needed)} graph files exist (first time: a GitHub rewiring takes ~5 min)")
-    with Pool(N_BUILD_PROCESSES) as pool:
+    print(f"making sure {len(needed)} graph files exist")
+    with Pool(3) as pool:  # building rewired graphs needs more memory per process
         for name in pool.imap_unordered(build_graph, needed):
             pass
 
@@ -278,6 +394,7 @@ def main():
     remove_cut_off_line()
     all_jobs = make_jobs()
     build_missing_graphs(all_jobs)
+    import_old_sweep(all_jobs)
     done = finished_run_ids()
     todo = []
     for job in all_jobs:

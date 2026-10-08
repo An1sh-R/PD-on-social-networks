@@ -74,6 +74,13 @@ class FermiAgent(Player):
         copy_probability = expit(payoff_gap / self.model.kappa)
         if self.model.random.random() < copy_probability:
             self.strategy = other.action
+        # mutation: strategy flips with probability mu (stops runs getting stuck in
+        # all-C / all-D). No random number drawn when mu = 0: old runs stay identical.
+        if self.model.mutation > 0 and self.model.random.random() < self.model.mutation:
+            if self.strategy == "C":
+                self.strategy = "D"
+            else:
+                self.strategy = "C"
 
 
 class BMAgent(Player):
@@ -128,13 +135,15 @@ def cooperation_fraction(model):
 class CooperationModel(mesa.Model):
     def __init__(self, G, agent_type, b=1.5, payoff_scheme="average", kappa=0.1,
                  beta=1.0, aspiration=0.5, epsilon=0.2, initial_coop=0.5,
-                 record_from=0, game="weak_pd", c=1.0, shuffle_seats=False, seed=None):
+                 record_from=0, game="weak_pd", c=1.0, shuffle_seats=False, mutation=0.0,
+                 seed=None):
         """
         G: networkx graph, connected, nodes labelled 0..n-1 (see networks.py)
         agent_type: "fermi" or "bm"
         b: temptation payoff of the weak PD (b > 1)
         payoff_scheme: "average" or "accumulated" (BM accumulated: aspiration * degree)
         kappa: Fermi noise. beta, aspiration, epsilon: BM sensitivity, aspiration A, slip rate.
+        mutation: Fermi only, probability a player's strategy flips after imitation
         record_from: from this round on (0 = first round), count each node's cooperation
         game: "weak_pd" (main study) or "donation" (only to check BM against Ezaki & Masuda 2017)
         c: cost of cooperating in the donation game (b = benefit there)
@@ -155,6 +164,7 @@ class CooperationModel(mesa.Model):
         self.c = c
         self.b = b
         self.kappa = kappa
+        self.mutation = mutation
         self.beta = beta
         self.aspiration = aspiration
         self.epsilon = epsilon

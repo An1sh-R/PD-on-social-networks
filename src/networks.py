@@ -79,21 +79,54 @@ def make_ws(n, avg_k, target_clustering):
     return clean(best_graph)
 
 
+def reconnect_pieces(G, rng):
+    """Join every small piece to the largest one without changing any degree.
+
+    For a piece edge (u, v) and a main-component edge (x, y): replace them with
+    (u, x) and (v, y). Degrees stay the same. (x, y) is never a bridge, so the main
+    component stays connected, and both halves of the piece hang on to it.
+    Fixed 2026-10-08: isolated pairs left by the swaps cooperated ~0.84 at high beta
+    and pushed degseq cooperation up by ~0.004 (LastFM, Deezer).
+    """
+    pieces = sorted(nx.connected_components(G), key=len, reverse=True)
+    for piece in pieces[1:]:
+        main = max(nx.connected_components(G), key=len)
+        main_graph = G.subgraph(main)
+        bridges = set()
+        for x, y in nx.bridges(main_graph):
+            bridges.add((x, y))
+            bridges.add((y, x))
+        main_edges = []
+        for edge in main_graph.edges():
+            if edge not in bridges:
+                main_edges.append(edge)
+        piece_edges = list(G.subgraph(piece).edges())
+        u, v = piece_edges[rng.integers(len(piece_edges))]
+        x, y = main_edges[rng.integers(len(main_edges))]
+        G.remove_edge(u, v)
+        G.remove_edge(x, y)
+        G.add_edge(u, x)
+        G.add_edge(v, y)
+
+
 def make_degseq(G_real, seed=SEED):
-    """Shuffle a copy of the real graph, keeping every node's degree exactly.
+    """Shuffle a copy of the real graph, keeping every node's degree exactly, connected.
 
     Done once to generate a fixed graph. (nx.configuration_model was tried first,
     but it loses hub edges on heavy-tailed graphs.)
-    Not passed through clean(): swaps can cut off a few tiny pieces (mostly two
-    degree-1 nodes linked to each other). Keeping only the largest piece would drop
-    those nodes and break the exact degree sequence, so we keep every node.
+    Swaps can cut off a few tiny pieces (mostly two degree-1 nodes linked to each
+    other). Dropping them would break the degree sequence, so they are joined back
+    to the main component instead (reconnect_pieces).
     """
     G = G_real.copy()
     nswap = 10 * G.number_of_edges()
     nx.double_edge_swap(G, nswap=nswap, max_tries=100 * nswap, seed=seed)
+    reconnect_pieces(G, np.random.default_rng(seed))
     real_degrees = sorted(d for _, d in G_real.degree())
     new_degrees = sorted(d for _, d in G.degree())
     assert new_degrees == real_degrees, "degree sequence changed"
+    assert nx.is_connected(G), "rewired graph not connected"
+    assert nx.number_of_selfloops(G) == 0, "self-loop"
     return G
 
 
@@ -155,12 +188,10 @@ def load_graph(name):
     return nx.read_edgelist(path, nodetype=int)
 
 
-def check_graph(G, must_be_connected=True):
-    """Sanity checks every graph must pass before simulation.
-    Degree-preserving shuffles may have a few tiny separate pieces (see make_degseq)."""
+def check_graph(G):
+    """Sanity checks every graph must pass before simulation."""
     assert nx.number_of_selfloops(G) == 0, "self-loops present"
-    if must_be_connected:
-        assert nx.is_connected(G), "graph not connected"
+    assert nx.is_connected(G), "graph not connected"
     assert nx.number_of_isolates(G) == 0, "node with no neighbours"
     assert sorted(G.nodes()) == list(range(G.number_of_nodes())), "node labels not 0..n-1"
 
@@ -183,10 +214,15 @@ def topology_metrics(G, name):
 
 
 def build_table():
+    """One row per graph: real, ER/BA/WS/degseq, and the 5 rewirings the sweep uses
+    for "<real>_degseq" (analyze.py averages those 5)."""
+    names = all_names()
+    for real in REAL_FILES:
+        names = names + rewired_names(real)
     rows = []
-    for name in all_names():
+    for name in names:
         G = load_graph(name)
-        check_graph(G, must_be_connected=not name.endswith("_degseq"))
+        check_graph(G)
         rows.append(topology_metrics(G, name))
         print(f"done {name}")
     return pd.DataFrame(rows)

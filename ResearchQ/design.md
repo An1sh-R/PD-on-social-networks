@@ -232,6 +232,27 @@ Question: averaged vs accumulated payoff, BM and Fermi. Which topology features 
 - numpy Fermi: ~0.15 s per 600-step LastFM run.
 - First look (numpy, LastFM, 600 steps): Fermi-averaged → cooperation ≈ 0 for κ ≥ 0.1 at b ≥ 1.05 (0.01–0.09 at κ = 0.01). Fermi-accumulated 0.4–0.97. Floor effect: Fermi-averaged sensitivity will be ~0 by construction. Fermi has no mutation → absorbing states, unlike BM (ε). Consider a mutation rate before the sweep.
 
+## Sweep v2 set-up (decided 2026-10-08, not run yet)
+
+- **Connected rewirings.** `make_degseq` now joins leftover small pieces to the main component with one more degree-preserving swap per piece (`reconnect_pieces`: piece edge (u,v) + non-bridge main edge (x,y) → (u,x),(v,y)). All 30 degseq/rewired files rebuilt, connected, exact degrees. Facebook files unchanged (never had pieces). Reason: audit found isolated pairs cooperating ~0.84 at β = 10, pushing degseq up ~0.004 (LastFM, Deezer). **Main-sweep degseq rows (`sweep_runs.csv`) are stale.**
+- **Mean-degree normalisation of accumulated payoffs.** With A_i = A·k_i, accumulated BM = averaged BM with β_i = β·k_i, i.e. ⟨k⟩ times more sensitive on average; Fermi similar (payoff gaps ~k×). So accumulated runs use β/⟨k⟩ (BM) and κ·⟨k⟩ (Fermi), done in `run.py` (models keep classic rules). Average-degree player = same sensitivity in both schemes; difference = spread of sensitivity across degrees only. Otherwise accumulated − average would mostly track ⟨k⟩. Exact check: on a random regular graph the normalised accumulated run equals the averaged run (same seed, identical curve). Note: GitHub top hub k/⟨k⟩ ≈ 620 → WSLS even at β = 0.01: real feature of accumulation, report it.
+- **Fermi mutation.** Strategy flips with prob μ after imitation (Mesa + numpy). μ = 0.01 (μ = 0 dropped after pilot, below). No random number drawn when μ = 0 → old runs unchanged.
+- **Fermi sanity check passed** (`validate_fermi.py`, randomised BA N = 5000, k̄ 4/8/16, κ = 0.1, μ = 0.01, 3000 steps, 10 seeds) against Ichinose & Sayama 2017 (linear imitation, async, all-D start: direction only). (a) accumulated > average 12/12 cells (k̄ = 4, b = 1.2: 0.556 vs 0.014); (b) accumulated falls with k̄ (0.556 → 0.370); (c) average rises with k̄ (0.014 → 0.041); (d) gap shrinks (0.542 → 0.329). All match. Note: averaged-payoff Fermi near floor (0.01–0.06).
+- **Grid (`run.py`).** Graphs per family: real, degseq, shuffled, er, ba, ws (30). BM average: main-sweep grid (12 β × 10 a × 5 b). BM accumulated: 11 β (no 0.01) × 8 a (0.1–0.8) × 5 b. Fermi: 2 schemes × 4 κ (0.01, 0.1, 1, 10) × μ = 0.01 × 7 b (1.02, 1.05, 1.1, 1.3, 1.5, 1.7, 2.0), 3000 steps. 10 reps. ~328k runs; 60k (BM average, real + shuffled) imported from the main sweep (same code path, same seeds → identical; import only if STEPS/WINDOW still 1500/500). ≈ 18 h.
+- New columns: payoff_scheme, kappa, mutation, mean_degree, beta_used, kappa_used, absorbed_at (first all-C/all-D round, −1 = never). Node files: real + degseq, rep 0.
+- **Convergence pilot (`pilot_payoffs.py`, Facebook/LastFM/GitHub, 4000 steps, 3 seeds; sweep window 1000–1500 vs 3500–4000):**
+  - BM accumulated: settled (|change| ≤ 0.002). 1500/500 kept.
+  - Fermi μ = 0.01, average: settled (mean change ≤ 0.02, noise). Accumulated: slow fluctuations, seed spread ~0.02, changes both signs (Facebook κ = 0.01 mean −0.03), GitHub drifting +0.015 at every κ.
+  - Fermi μ = 0: not settled at 4000 steps; many runs not absorbed (Facebook mostly never); seeds split (GitHub b = 1.3: 0.28 / 1.0 / 1.0). A fixed window = transient snapshot.
+  - **Decided:** drop μ = 0 from the sweep (classic Fermi = separate fixation experiment if ever needed). Fermi runs 3000 steps, window last 1000. BM stays 1500/500. Cost about unchanged (half the Fermi runs, twice as long). `window` column records each run's window.
+  - Speed: Fermi ≈ BM per step (GitHub ~5 ms/step single process). Pilot looked slower only from 8 processes sharing memory bandwidth.
+- **Checks before the sweep (2026-10-09), all passed:**
+  - `check_fast_model.py` with mutation: all exact checks (payoffs, BM update both schemes, Fermi copy probability, neighbour choice, normalisation identity) + 16/16 statistical cells agree. One cell borderline (Fermi average, μ = 0.01, κ = 0.1, p = 0.01, diff −0.0005): rerun with 60 fresh seeds → diff −0.00003, p = 0.81. Chance.
+  - `run.py --test` + both analysis scripts on its output: run end to end; regression includes degseq (topology table now has all 50 graphs).
+  - Import of main-sweep rows: 60,000 rows (30k real, 30k shuffled), all valid sweep run_ids, unique, 3000 node files. Rerunning 4 of them (incl. GitHub, shuffled) with the new code: cooperation, drift, even_odd_gap, mean_p bit-identical. (pandas' default float parser is not exact in the last bit: compare with `csv` or `float_precision="round_trip"`.)
+- **Memory.** `run.py --test` hit a MemoryError while 4 other jobs ran (Windows commit 23.5 / 29.5 GB, physical RAM free). Reran fine alone. Run the sweep with nothing else running.
+- Analysis: `analyze.py` = BM average, now per family and regime (a=0 / A≤1 / A>1 / dead zone), 95% CI over reps (paired by seed), regression over 25 topologies (degseq = mean of its 5 rewirings' features). `analyze_payoffs.py` = accumulated − average per graph (BM vs β per regime, Fermi vs 1/κ per μ), Fermi absorption/drift, Spearman + regression of the effect on features across 25 topologies.
+
 ## Still open
 
 - β range. Pilot.

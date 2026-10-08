@@ -1,11 +1,14 @@
 """Check that fast_model.py (numpy) does the same as model.py (Mesa reference).
 
-Run from project root: python src/check_fast_model.py   (~30 min)
+Run from project root: python src/check_fast_model.py   (~35 min)
 
 1. Exact: same actions -> same payoffs (average and accumulated); same
    p/action/payoff -> same BM update (both schemes); same chosen neighbour ->
    same Fermi copy probability; random neighbours are real, uniform neighbours.
-2. Statistical: whole runs (BM average, BM accumulated, Fermi both schemes).
+   Mean-degree normalisation (run.py): on a regular graph, accumulated payoffs with
+   beta / k (BM) or kappa * k (Fermi) give exactly the averaged-payoff run.
+2. Statistical: whole runs (BM average, BM accumulated, Fermi both schemes, with
+   and without mutation).
    Seeds give different random numbers in the two versions, so compare the mean
    cooperation over 20 seeds per cell (Welch t-test).
 Output: results/fast_model_check.csv
@@ -14,6 +17,7 @@ import csv
 import os
 import random
 
+import networkx as nx
 import numpy as np
 from scipy.special import expit
 from scipy.stats import chisquare, ttest_ind
@@ -46,11 +50,14 @@ BM_CELLS = [
 # Fermi (b, kappa, shuffled, payoff_scheme). Chosen where cooperation is not stuck at 0
 # (Fermi with average payoff dies out at almost every kappa on LastFM; with shuffled
 # seats it always dies out, so that cell is about how fast: kappa=10 decays slowest).
+# (b, kappa, shuffled, payoff_scheme, mutation)
 FERMI_CELLS = [
-    (1.05, 0.01, False, "average"),
-    (1.2, 0.1, False, "accumulated"),
-    (1.5, 1.0, False, "accumulated"),
-    (1.05, 10.0, True, "average"),
+    (1.05, 0.01, False, "average", 0.0),
+    (1.2, 0.1, False, "accumulated", 0.0),
+    (1.5, 1.0, False, "accumulated", 0.0),
+    (1.05, 10.0, True, "average", 0.0),
+    (1.05, 0.1, False, "average", 0.01),
+    (1.5, 0.1, False, "accumulated", 0.01),
 ]
 
 
@@ -147,6 +154,26 @@ def check_random_neighbours(A, degree):
           f"(degree {int(degree[hub])}, chi-square p={p_value:.2f})")
 
 
+def check_normalisation_on_regular_graph():
+    """run.py divides beta by <k> (BM) and multiplies kappa by <k> (Fermi) for
+    accumulated payoffs. On a regular graph every k = <k>, so that must give exactly
+    the averaged-payoff run (same seed -> same random numbers -> same curve)."""
+    k = 6
+    G = nx.random_regular_graph(k, 500, seed=1)
+    A, degree = neighbour_matrix(G)
+    for beta in [0.1, 1.0, 10.0]:
+        average, _, _ = run_bm(A, degree, B, beta, 0.6, EPSILON, 300, seed=5)
+        accumulated, _, _ = run_bm(A, degree, B, beta / k, 0.6, EPSILON, 300,
+                                   payoff_scheme="accumulated", seed=5)
+        assert np.array_equal(average, accumulated), f"BM normalisation off at beta={beta}"
+    for kappa in [0.01, 0.1, 1.0]:
+        average, _ = run_fermi(A, degree, 1.05, kappa, 300, mutation=0.01, seed=5)
+        accumulated, _ = run_fermi(A, degree, 1.05, kappa * k, 300, payoff_scheme="accumulated",
+                                   mutation=0.01, seed=5)
+        assert np.array_equal(average, accumulated), f"Fermi normalisation off at kappa={kappa}"
+    print("exact check: mean-degree normalisation gives the averaged run on a regular graph")
+
+
 def compare(label, mesa_values, fast_values, settings):
     p_value = ttest_ind(mesa_values, fast_values, equal_var=False).pvalue
     if np.isnan(p_value):
@@ -184,7 +211,7 @@ def compare_bm_runs(G, A, degree):
                                      payoff_scheme=scheme, seed=seed)
             fast_values.append(curve[record_from:].mean())
         settings = {"payoff_scheme": scheme, "b": b, "beta": beta, "a_fraction": a_fraction,
-                    "kappa": "-", "shuffled": shuffled}
+                    "kappa": "-", "mutation": "-", "shuffled": shuffled}
         rows.append(compare("bm", mesa_values, fast_values, settings))
     return rows
 
@@ -193,21 +220,21 @@ def compare_fermi_runs(G, A, degree):
     """Fermi has no mutation: runs end in all-C or all-D sooner or later. So compare the
     mean over the whole run, which includes the way there, not only the late window."""
     rows = []
-    for b, kappa, shuffled, scheme in FERMI_CELLS:
+    for b, kappa, shuffled, scheme, mutation in FERMI_CELLS:
         mesa_values = []
         fast_values = []
         for seed in range(SEEDS):
             model = CooperationModel(G, "fermi", b=b, kappa=kappa, payoff_scheme=scheme,
-                                     shuffle_seats=shuffled, seed=seed)
+                                     shuffle_seats=shuffled, mutation=mutation, seed=seed)
             model.run(STEPS)
             curve = model.datacollector.model_vars["cooperation"]
             mesa_values.append(np.mean(curve))
 
             curve, nodes = run_fermi(A, degree, b, kappa, STEPS, payoff_scheme=scheme,
-                                     shuffle_seats=shuffled, seed=seed)
+                                     shuffle_seats=shuffled, mutation=mutation, seed=seed)
             fast_values.append(curve.mean())
         settings = {"payoff_scheme": scheme, "b": b, "beta": "-", "a_fraction": "-",
-                    "kappa": kappa, "shuffled": shuffled}
+                    "kappa": kappa, "mutation": mutation, "shuffled": shuffled}
         rows.append(compare("fermi", mesa_values, fast_values, settings))
     return rows
 
@@ -220,6 +247,7 @@ def main():
         check_bm_update(G, degree, scheme)
     check_fermi_update(G, A, degree)
     check_random_neighbours(A, degree)
+    check_normalisation_on_regular_graph()
 
     print(f"statistical check: {GRAPH}, {STEPS} steps, {SEEDS} seeds per cell")
     rows = compare_fermi_runs(G, A, degree) + compare_bm_runs(G, A, degree)
