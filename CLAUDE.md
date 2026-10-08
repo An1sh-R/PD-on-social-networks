@@ -28,7 +28,7 @@ Experimentation/
     networks.py       load, clean, synthetic equivalents, topology metrics   [done]
     plot_graphs.py    draw each real graph + synthetic equivalents -> graphs/ [done]
     model.py          mesa agents (BM, Fermi) + model = readable reference    [done]
-    fast_model.py     numpy BM, same rules, ~10-20x faster, used by run.py    [done]
+    fast_model.py     numpy BM + Fermi, same rules, ~10-20x faster, run.py    [done]
     check_fast_model.py  fast_model vs model: exact + 20-seed comparison      [done]
     test_model.py     simple asserts for model.py (python src/test_model.py)  [done]
     validate_bm.py    BM vs Ezaki & Masuda 2017 rings -> results/            [done]

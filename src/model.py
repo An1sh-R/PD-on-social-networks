@@ -79,9 +79,10 @@ class FermiAgent(Player):
 class BMAgent(Player):
     """Bush-Mosteller (Ezaki et al. 2016). p = probability of cooperating."""
 
-    def __init__(self, model, initial_coop):
-        # BM always uses average payoff: the aspiration A needs a fixed scale.
-        super().__init__(model, "average")
+    def __init__(self, model, payoff_scheme, initial_coop):
+        # average payoff: one aspiration A for everyone (payoff scale is fixed).
+        # accumulated payoff: aspiration A * degree of the current seat (see update).
+        super().__init__(model, payoff_scheme)
         self.p = initial_coop
 
     def choose_action(self):
@@ -95,7 +96,13 @@ class BMAgent(Player):
             self.action = "D"
 
     def update(self):
-        stimulus = math.tanh(self.model.beta * (self.payoff - self.model.aspiration))
+        aspiration = self.model.aspiration
+        if self.payoff_scheme == "accumulated":
+            # Summed payoff grows with degree, so the aspiration does too (A_i = A k_i,
+            # like the degree-scaled starting aspiration of Pal & Sengupta 2021).
+            # Same as average payoff with sensitivity beta * k.
+            aspiration = aspiration * len(self.neighbors)
+        stimulus = math.tanh(self.model.beta * (self.payoff - aspiration))
         p = self.p
         if self.action == "C":
             if stimulus >= 0:
@@ -126,7 +133,7 @@ class CooperationModel(mesa.Model):
         G: networkx graph, connected, nodes labelled 0..n-1 (see networks.py)
         agent_type: "fermi" or "bm"
         b: temptation payoff of the weak PD (b > 1)
-        payoff_scheme: "average" or "accumulated" (Fermi only; BM is always average)
+        payoff_scheme: "average" or "accumulated" (BM accumulated: aspiration * degree)
         kappa: Fermi noise. beta, aspiration, epsilon: BM sensitivity, aspiration A, slip rate.
         record_from: from this round on (0 = first round), count each node's cooperation
         game: "weak_pd" (main study) or "donation" (only to check BM against Ezaki & Masuda 2017)
@@ -168,7 +175,7 @@ class CooperationModel(mesa.Model):
             if agent_type == "fermi":
                 player = FermiAgent(self, payoff_scheme, initial_coop)
             else:
-                player = BMAgent(self, initial_coop)
+                player = BMAgent(self, payoff_scheme, initial_coop)
             self.players.append(player)
 
         self.seat_players(self.players)

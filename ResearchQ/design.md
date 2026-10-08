@@ -102,8 +102,8 @@ Re-run 2026-10-07 with the corrected ε (flip). Old ε rule (random pick) in bra
 | D | p − p·s | p − (1−p)s |
 
 - p stays in [0,1], no clipping needed.
-- **BM averaged payoff only.** A needs fixed scale; accumulated payoff scales with degree.
-- Comparison arms: BM-averaged, Fermi-averaged (fair), Fermi-accumulated (classic).
+- ~~BM averaged payoff only.~~ Main sweep: BM averaged. **BM accumulated added 2026-10-08** (see "Payoff scheme comparison"): aspiration of seat = A·k.
+- Comparison arms: BM-averaged, BM-accumulated, Fermi-averaged (fair), Fermi-accumulated (classic).
 - A: in [0, b]. Start 0.2 / 0.5 / 0.8 (TBD after pilot).
 
 ## Measuring topology effect
@@ -214,6 +214,21 @@ Fermi arms negligible (2 runs per b × rep vs 99 BM). 1000 steps instead of 1500
 
 - 90,000 BM runs (15 graphs × 6000), 12 processes, 339 min (+ ~10 min building rewirings). No errors, no restarts, 0 missing values. Output `results/sweep_runs.csv`, log `results/sweep.log`, analysis `results/sweep_*`.
 - Diagnostics: 8992/9000 cells ok, 8 still moving (all β=0.01); 1062 cells (12%) oscillate (β ≥ 2); dead zone a=0.9 mean coop 0.478.
+
+## Payoff scheme comparison (decided 2026-10-08)
+
+Question: averaged vs accumulated payoff, BM and Fermi. Which topology features predict the difference?
+
+- Graphs: all 25 (5 real + ER/BA/WS/degseq) + shuffled. ER/BA/WS back in: wider range of degree heterogeneity, needed to say which feature predicts anything (5 degree sequences alone is too few).
+- Fermi: sweep κ (no single κ). Reason: accumulated payoff gaps ≈ ⟨k⟩ × averaged gaps, so one κ = different selection strength per scheme and per graph.
+- BM accumulated: payoff = sum over neighbours, aspiration of seat i = A·k_i (A = a·b as before). Equivalent to averaged payoff with β_i = β·k_i: accumulation = degree-scaled learning sensitivity. Hubs at β·k ≫ 10 behave as win-stay-lose-shift even at small β.
+- Literature behind the BM choice:
+  - Ezaki & Masuda 2017 (BM on rings): payoff "averaged over the k neighbors". Supports averaged as main arm.
+  - Zhou, Wu, Du & Wang (arXiv 1810.00387, SI "Accumulated payoffs"): accumulated payoffs with fixed per-individual aspirations (not strategy-dependent) keep the network-independent weak-selection condition. Degree-scaled A_i is such a personalised aspiration → still inside the theory.
+  - Pal & Sengupta 2021 (bioRxiv 10.1101/2021.09.16.460462, BM, summed payoffs): initial aspiration ∝ k_i. Precedent for degree-scaled aspiration.
+  - No paper found with BM + accumulated payoffs + one shared fixed A on heterogeneous networks. Shared A would make hubs always satisfied, leaves never → outcome fixed by degree. Rejected.
+- Code: `fast_model.py` has `run_fermi` (numpy) and `run_bm(payoff_scheme=...)`. Mesa `BMAgent` takes payoff_scheme too. `check_fast_model.py` checks both.
+- First look (numpy, LastFM, 600 steps): Fermi-averaged → cooperation ≈ 0 for κ ≥ 0.1 at b ≥ 1.05 (0.01–0.09 at κ = 0.01). Fermi-accumulated 0.4–0.97. Floor effect: Fermi-averaged sensitivity will be ~0 by construction. Fermi has no mutation → absorbing states, unlike BM (ε). Consider a mutation rate before the sweep.
 
 ## Still open
 

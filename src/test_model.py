@@ -68,10 +68,20 @@ def test_payoff_donation_game():
     assert close(model.players[3].payoff, 6)  # D leaf: gift, pays nothing
 
 
-def test_bm_always_uses_average_payoff():
+def test_bm_accumulated_aspiration_scales_with_degree():
+    # star, everyone C, beta=1, A=0.5. Centre: payoff 3, aspiration 0.5*3 -> stimulus
+    # tanh(1.5) (= beta*k*(average payoff - A)). Leaf: payoff 1, aspiration 0.5 -> tanh(0.5).
     G = nx.star_graph(3)
-    model = CooperationModel(G, "bm", payoff_scheme="accumulated", seed=1)
-    assert model.players[0].payoff_scheme == "average"
+    model = CooperationModel(G, "bm", payoff_scheme="accumulated", beta=1.0, aspiration=0.5, seed=1)
+    for player in model.players:
+        player.action = "C"
+        player.p = 0.5
+    for player in model.players:
+        player.compute_payoff()
+    for player in model.players:
+        player.update()
+    assert close(model.players[0].p, 0.5 + 0.5 * math.tanh(1.5))
+    assert close(model.players[1].p, 0.5 + 0.5 * math.tanh(0.5))
 
 
 def test_bm_update_four_cases():
