@@ -269,6 +269,15 @@ No code bugs found there. Points and responses:
 - Minor: absorbed_at always −1 with μ = 0.01 (no all-C/all-D round on thousands of players). Column kept; diagnostics no longer use it.
 - Still open, out of this sweep: partner identity vs degree position in real − shuffled; memoryless aspiration arm (user: not now).
 
+## Framing + dead zone (decided 2026-10-09, before sweep v2)
+
+- question.md reworded: purely empirical (BM vs Fermi, averaged vs accumulated, which structure). Weak-selection theory framing dropped (user: not the interest); no memoryless-aspiration arm. Older theory notes in this file are history only.
+- H4 reported as graph-type contrasts (degseq − ER, WS − ER, real − degseq, real − shuffled): within a family clustering, modularity and assortativity all move as "real/WS vs the rest", so single features cannot be separated.
+- BM vs Fermi sensitivity compared relative to each learner's shuffled-seats baseline (β and 1/κ have no common scale; Fermi at κ = 10 is near-neutral).
+- Dead-zone cutoff a ≥ 0.9 → a ≥ 0.8 in `analyze.py`. Main sweep, real graphs, mean |coop − 0.5|: a = 0.8 0.010–0.039, a = 0.9 0.009–0.033, a = 0.7 0.014–0.047. Gradual, not a sharp edge; 0.8 ≈ 0.9 and diluted the A>1 averages. A>1 regime now only b ≥ 1.5.
+- Smallest effect worth reporting: 0.01 cooperation.
+- Limitation to report: BA/WS ⟨k⟩ ~10% off real in Deezer, LastFM, GitHub (integer m, even k), mean degree not in the regression.
+
 ## Still open
 
 - β range. Pilot.

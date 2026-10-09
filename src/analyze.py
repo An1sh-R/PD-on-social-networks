@@ -24,8 +24,9 @@ topology sensitivity of BM change with beta, and which network features drive it
 
 Regimes (a = A/b): "a=0" nobody is ever unhappy (payoff >= 0 = A); "A<=1" cooperators
 can be satisfied; "A>1" a cooperator never reaches A (max cooperator payoff = 1);
-"dead zone" a = 0.9, everyone unhappy, cooperation ~0.5. Only A<=1 and A>1 are shown
-in the step plots.
+"dead zone" a >= 0.8, nearly everyone unhappy every round, cooperation ~0.5.
+Only A<=1 and A>1 are shown in the step plots. With the cutoff at 0.8, A>1 exists only
+for b >= 1.5 (a = 0.7 at b = 1.5; a = 0.6, 0.7 at b = 1.7, 2.0).
 
 Run from project root:  python src/analyze.py   (or --test for the test sweep)
 Writes results/<name>_*.csv and results/<name>_*.png
@@ -53,7 +54,10 @@ DRIFT_LIMIT = 0.02  # |drift| above this: run was still moving at the end
 SPREAD_LIMIT = 0.05  # std between repeats above this: repeats end at different levels
 OSCILLATION_LIMIT = 0.05  # |even - odd round cooperation| above this: period-2 oscillation
 SLOW_BETA = 0.01  # pilot: not settled by 1000 steps
-DEAD_ZONE_A = 0.9  # pilot: a >= 0.9 -> everyone unhappy, cooperation ~0.5
+# a >= 0.8: nearly everyone unhappy, cooperation ~0.5. Was 0.9 until 2026-10-09: main
+# sweep showed a = 0.8 almost as flat (mean |coop - 0.5| 0.010-0.039 vs 0.009-0.033 at
+# a = 0.9) and it diluted the A>1 averages toward 0.
+DEAD_ZONE_A = 0.8
 SHOWN_REGIMES = ["A<=1", "A>1"]
 
 
