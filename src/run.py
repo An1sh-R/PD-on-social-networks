@@ -32,7 +32,6 @@ All runs use the numpy models (fast_model.py), checked against Mesa by check_fas
 """
 import csv
 import os
-import shutil
 import sys
 import time
 from multiprocessing import Pool
@@ -64,7 +63,8 @@ if TEST:
 else:
     # small networks first, so their results are complete before GitHub/Deezer
     FAMILIES = ["facebook", "lastfm", "twitch", "deezer", "github"]
-    # BM average: same grid as the main sweep (its real/shuffled runs are imported).
+    # BM average: same grid as the main sweep. All rerun (2026-10-09): the main sweep
+    # has no assortment column and its degseq graphs were not connected.
     # beta=0.01 still drifts, a=0.9 is the dead zone: kept, flagged in the analysis.
     BM_AVERAGE_BETAS = [0.01, 0.1, 0.3, 0.6, 1.0, 2.0, 3.0, 5.0, 10.0, 20.0, 30.0, 100.0]
     BM_AVERAGE_A = [0.0, 0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9]
@@ -96,7 +96,6 @@ for family in FAMILIES:
 
 EPSILON = 0.05  # BM slip = flip the intended action, as Ezaki & Masuda 2017
 N_PROCESSES = 12
-OLD_SWEEP = "sweep"  # main BM sweep (2026-10-08): real + shuffled rows are reused
 
 RUNS_PATH = os.path.join(RESULTS_DIR, OUT_NAME + "_runs.csv")
 NODES_DIR = os.path.join(RESULTS_DIR, OUT_NAME + "_nodes")  # per-node cooperation
@@ -104,7 +103,8 @@ NODES_DIR = os.path.join(RESULTS_DIR, OUT_NAME + "_nodes")  # per-node cooperati
 COLUMNS = ["run_id", "graph", "family", "graph_type", "agent", "payoff_scheme", "b", "beta",
            "a_fraction", "aspiration", "epsilon", "kappa", "mutation", "mean_degree",
            "beta_used", "kappa_used", "rep", "source_graph", "steps", "window", "cooperation",
-           "cooperation_std", "drift", "even_odd_gap", "mean_p", "absorbed_at", "seconds"]
+           "cooperation_std", "drift", "even_odd_gap", "mean_p", "assortment", "absorbed_at",
+           "seconds"]
 
 
 # ---- jobs ------------------------------------------------------------------
@@ -239,7 +239,7 @@ def run_one(job):
         beta_used = job["beta"]
         if scheme == "accumulated":
             beta_used = job["beta"] / mean_degree  # mean-degree normalisation (docstring)
-        curve, p, node_cooperation = run_bm(A, degree, job["b"], beta_used, aspiration,
+        curve, p, node_cooperation, mean_assortment = run_bm(A, degree, job["b"], beta_used, aspiration,
                                             EPSILON, steps, record_from=record_from,
                                             shuffle_seats=shuffle, payoff_scheme=scheme,
                                             seed=job["rep"])
@@ -249,7 +249,7 @@ def run_one(job):
         kappa_used = job["kappa"]
         if scheme == "accumulated":
             kappa_used = job["kappa"] * mean_degree  # mean-degree normalisation (docstring)
-        curve, node_cooperation = run_fermi(A, degree, job["b"], kappa_used, steps,
+        curve, node_cooperation, mean_assortment = run_fermi(A, degree, job["b"], kappa_used, steps,
                                             payoff_scheme=scheme, record_from=record_from,
                                             shuffle_seats=shuffle, mutation=job["mutation"],
                                             seed=job["rep"])
@@ -290,6 +290,8 @@ def run_one(job):
         # every-other-round gap: big if the whole population flips C <-> D each round
         "even_odd_gap": float(abs(window[0::2].mean() - window[1::2].mean())),
         "mean_p": mean_p,
+        # do cooperators sit next to cooperators? (~0 on shuffled seats: a check)
+        "assortment": mean_assortment,
         "absorbed_at": absorbed_at,
         "seconds": round(time.time() - start, 2),
     }
@@ -311,60 +313,6 @@ def save_node_file(run_id, node_values):
     temp_path = path[:-len(".npy")] + "_tmp.npy"  # np.save adds .npy if missing
     np.save(temp_path, node_values)
     os.replace(temp_path, path)
-
-
-# ---- reuse the main sweep ----------------------------------------------------
-
-def import_old_sweep(jobs):
-    """Copy BM average-payoff runs on real and shuffled graphs from the main sweep.
-    Same code path and seeds as now (only degseq changed: its graphs were rebuilt
-    connected on 2026-10-08), so these runs would come out identical. Done once,
-    before the new CSV exists. Saves ~4 h."""
-    old_path = os.path.join(RESULTS_DIR, OLD_SWEEP + "_runs.csv")
-    if TEST or os.path.exists(RUNS_PATH) or not os.path.exists(old_path):
-        return
-    if STEPS != 1500 or WINDOW != 500:
-        print("not importing the main sweep: it used 1500 steps / window 500")
-        return
-    wanted = {}
-    for job in jobs:
-        if job["agent"] == "bm" and job["payoff_scheme"] == "average":
-            if graph_type(job["graph"]) in ("real", "shuffled"):
-                old_id = (f"{job['graph']}|bm|b={job['b']}|beta={job['beta']}"
-                          f"|a={job['a_fraction']}|rep={job['rep']}")
-                wanted[old_id] = job
-    mean_degrees = {}
-    for family in FAMILIES:
-        A, degree = neighbour_matrix(load_graph(family))
-        mean_degrees[family] = round(float(degree.mean()), 4)
-
-    old_nodes_dir = os.path.join(RESULTS_DIR, OLD_SWEEP + "_nodes")
-    n_copied = 0
-    with open(old_path, newline="") as old_file, open(RUNS_PATH, "w", newline="") as new_file:
-        writer = csv.DictWriter(new_file, fieldnames=COLUMNS)
-        writer.writeheader()
-        for old in csv.DictReader(old_file):
-            if old["run_id"] not in wanted:
-                continue
-            job = wanted[old["run_id"]]
-            row = {}
-            for column in COLUMNS:
-                row[column] = old.get(column, "-")
-            row["run_id"] = job["run_id"]
-            row["payoff_scheme"] = "average"
-            row["kappa"] = "-"
-            row["mutation"] = "-"
-            row["mean_degree"] = mean_degrees[old["family"]]
-            row["beta_used"] = old["beta"]
-            row["kappa_used"] = "-"
-            row["absorbed_at"] = "-"  # not recorded then (BM never gets stuck: epsilon)
-            row["window"] = 500
-            writer.writerow(row)
-            n_copied += 1
-            old_node_path = os.path.join(old_nodes_dir, node_file_name(old["run_id"]))
-            if keeps_node_values(job) and os.path.exists(old_node_path):
-                shutil.copyfile(old_node_path, os.path.join(NODES_DIR, node_file_name(job["run_id"])))
-    print(f"imported {n_copied} BM average runs (real + shuffled) from {old_path}")
 
 
 # ---- main ------------------------------------------------------------------
@@ -394,7 +342,6 @@ def main():
     remove_cut_off_line()
     all_jobs = make_jobs()
     build_missing_graphs(all_jobs)
-    import_old_sweep(all_jobs)
     done = finished_run_ids()
     todo = []
     for job in all_jobs:

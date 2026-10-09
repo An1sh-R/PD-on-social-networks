@@ -13,6 +13,9 @@ topology sensitivity of BM change with beta, and which network features drive it
                  (paired: same seed in both graphs).
 3. Regression    cooperation ~ standardised graph features, across 25 topologies
 4. Node level    per-node cooperation vs degree and local clustering (real + degseq)
+5. Assortment    P(C|C) - P(C|D) vs beta: do cooperators cluster? If real - shuffled
+                 grows with beta because of reciprocity, assortment on real should too
+                 (shuffled ~0 by construction)
 
 Regimes (a = A/b): "a=0" nobody is ever unhappy (payoff >= 0 = A); "A<=1" cooperators
 can be satisfied; "A>1" a cooperator never reaches A (max cooperator payoff = 1);
@@ -369,6 +372,41 @@ def node_level(bm):
     return table
 
 
+# ---- 5. assortment ------------------------------------------------------------
+
+def assortment_plot(bm):
+    """Mean assortment vs beta, per family, for real / degseq / shuffled, per regime."""
+    if "assortment" not in bm.columns:
+        print("assortment: no column (older sweep), skipped")
+        return None
+    table = bm.groupby(["family", "graph_type", "regime", "beta"], as_index=False)["assortment"].mean()
+    table.to_csv(out_path("_assortment.csv"), index=False)
+    styles = {"real": "-", "degseq": "--", "shuffled": ":"}
+    fig, axes = plt.subplots(1, len(SHOWN_REGIMES), figsize=(6.5 * len(SHOWN_REGIMES), 4.5),
+                             sharey=True, squeeze=False)
+    for ax, shown in zip(axes[0], SHOWN_REGIMES):
+        part = table[table["regime"] == shown]
+        colours = {}
+        for i, family in enumerate(sorted(part["family"].unique())):
+            colours[family] = f"C{i}"
+        for (family, kind), line in part.groupby(["family", "graph_type"]):
+            if kind not in styles:
+                continue
+            line = line.sort_values("beta")
+            label = family if kind == "real" else None
+            ax.plot(line["beta"], line["assortment"], styles[kind], color=colours[family],
+                    marker="o", markersize=2, label=label)
+        ax.axhline(0, color="black", linewidth=0.5)
+        ax.set_xscale("log")
+        ax.set_xlabel("beta")
+        ax.set_title(f"regime {shown} (solid real, dashed degseq, dotted shuffled)", fontsize=9)
+    axes[0][0].set_ylabel("assortment P(C|C) - P(C|D), mean over b, a, reps")
+    axes[0][-1].legend(fontsize=7)
+    fig.savefig(out_path("_assortment.png"), dpi=150, bbox_inches="tight")
+    plt.close(fig)
+    return table
+
+
 def main():
     bm = load_bm_runs("average")
     print(f"{len(bm)} BM average-payoff runs, {bm['graph'].nunique()} graphs")
@@ -380,6 +418,7 @@ def main():
     steps(bm)
     regression(bm)
     node_level(bm)
+    assortment_plot(bm)
     print("saved tables and figures in", RESULTS_DIR)
 
 

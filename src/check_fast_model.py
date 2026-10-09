@@ -22,8 +22,8 @@ import numpy as np
 from scipy.special import expit
 from scipy.stats import chisquare, ttest_ind
 
-from fast_model import (bm_update, fermi_copy_probability, neighbour_matrix, random_neighbours,
-                        run_bm, run_fermi, weak_pd_payoffs)
+from fast_model import (assortment, bm_update, fermi_copy_probability, neighbour_matrix,
+                        random_neighbours, run_bm, run_fermi, weak_pd_payoffs)
 from model import CooperationModel
 from networks import RESULTS_DIR, load_graph
 
@@ -162,16 +162,37 @@ def check_normalisation_on_regular_graph():
     G = nx.random_regular_graph(k, 500, seed=1)
     A, degree = neighbour_matrix(G)
     for beta in [0.1, 1.0, 10.0]:
-        average, _, _ = run_bm(A, degree, B, beta, 0.6, EPSILON, 300, seed=5)
-        accumulated, _, _ = run_bm(A, degree, B, beta / k, 0.6, EPSILON, 300,
+        average, _, _, _ = run_bm(A, degree, B, beta, 0.6, EPSILON, 300, seed=5)
+        accumulated, _, _, _ = run_bm(A, degree, B, beta / k, 0.6, EPSILON, 300,
                                    payoff_scheme="accumulated", seed=5)
         assert np.array_equal(average, accumulated), f"BM normalisation off at beta={beta}"
     for kappa in [0.01, 0.1, 1.0]:
-        average, _ = run_fermi(A, degree, 1.05, kappa, 300, mutation=0.01, seed=5)
-        accumulated, _ = run_fermi(A, degree, 1.05, kappa * k, 300, payoff_scheme="accumulated",
+        average, _, _ = run_fermi(A, degree, 1.05, kappa, 300, mutation=0.01, seed=5)
+        accumulated, _, _ = run_fermi(A, degree, 1.05, kappa * k, 300, payoff_scheme="accumulated",
                                    mutation=0.01, seed=5)
         assert np.array_equal(average, accumulated), f"Fermi normalisation off at kappa={kappa}"
     print("exact check: mean-degree normalisation gives the averaged run on a regular graph")
+
+
+def check_assortment(G, A, degree):
+    """assortment() against a plain loop over every edge, both directions."""
+    rng = np.random.default_rng(6)
+    for share_coop in [0.1, 0.5, 0.9]:
+        coop = rng.random(A.shape[0]) < share_coop
+        c_neighbours_of_c, edges_of_c = 0, 0
+        c_neighbours_of_d, edges_of_d = 0, 0
+        for u, v in G.edges():
+            for me, other in [(u, v), (v, u)]:
+                if coop[me]:
+                    edges_of_c += 1
+                    c_neighbours_of_c += coop[other]
+                else:
+                    edges_of_d += 1
+                    c_neighbours_of_d += coop[other]
+        by_loop = c_neighbours_of_c / edges_of_c - c_neighbours_of_d / edges_of_d
+        assert np.isclose(by_loop, assortment(A, degree, coop)), "assortment differs"
+    assert np.isnan(assortment(A, degree, np.ones(A.shape[0], dtype=bool)))
+    print("exact check: assortment matches a plain loop over all edges")
 
 
 def compare(label, mesa_values, fast_values, settings):
@@ -206,7 +227,7 @@ def compare_bm_runs(G, A, degree):
             curve = model.datacollector.model_vars["cooperation"]
             mesa_values.append(np.mean(curve[record_from:]))
 
-            curve, p, nodes = run_bm(A, degree, b, beta, aspiration, EPSILON, STEPS,
+            curve, p, nodes, _ = run_bm(A, degree, b, beta, aspiration, EPSILON, STEPS,
                                      record_from=record_from, shuffle_seats=shuffled,
                                      payoff_scheme=scheme, seed=seed)
             fast_values.append(curve[record_from:].mean())
@@ -230,7 +251,7 @@ def compare_fermi_runs(G, A, degree):
             curve = model.datacollector.model_vars["cooperation"]
             mesa_values.append(np.mean(curve))
 
-            curve, nodes = run_fermi(A, degree, b, kappa, STEPS, payoff_scheme=scheme,
+            curve, nodes, _ = run_fermi(A, degree, b, kappa, STEPS, payoff_scheme=scheme,
                                      shuffle_seats=shuffled, mutation=mutation, seed=seed)
             fast_values.append(curve.mean())
         settings = {"payoff_scheme": scheme, "b": b, "beta": "-", "a_fraction": "-",
@@ -248,6 +269,7 @@ def main():
     check_fermi_update(G, A, degree)
     check_random_neighbours(A, degree)
     check_normalisation_on_regular_graph()
+    check_assortment(G, A, degree)
 
     print(f"statistical check: {GRAPH}, {STEPS} steps, {SEEDS} seeds per cell")
     rows = compare_fermi_runs(G, A, degree) + compare_bm_runs(G, A, degree)

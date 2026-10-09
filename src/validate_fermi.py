@@ -59,7 +59,7 @@ def run_all():
                 if scheme == "accumulated":
                     kappa = KAPPA * actual_mean_degree
                 for seed in range(SEEDS):
-                    curve, _ = run_fermi(A, degree, b, kappa, STEPS, payoff_scheme=scheme,
+                    curve, _, _ = run_fermi(A, degree, b, kappa, STEPS, payoff_scheme=scheme,
                                          mutation=MUTATION, seed=seed)
                     rows.append({"mean_degree": mean_degree, "b": b, "payoff_scheme": scheme,
                                  "seed": seed, "cooperation": curve[-WINDOW:].mean(),

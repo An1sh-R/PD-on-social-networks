@@ -38,7 +38,7 @@ Experimentation/
     run.py            sweep v2: BM + Fermi, avg + accumulated, 30 graphs (--test) [ready]
     structure_test.py mentor design: original vs rewired vs shuffled seats  [done]
     structure_summary.py  Welch CIs, +/-0.01 equivalence verdict, figures     [done]
-    analyze.py        BM average: diagnostics, sensitivity, steps per family + regime, regression, node level [ready]
+    analyze.py        BM average: diagnostics, sensitivity, steps per family + regime, regression, node level, assortment [ready]
     analyze_payoffs.py  accumulated - average (BM, Fermi), Fermi diagnostics, which features predict it [ready]
   graphs/           network drawings (one png per real graph)
   results/          csv, result figures

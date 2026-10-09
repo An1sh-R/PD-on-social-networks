@@ -66,11 +66,11 @@ def run_one(job):
         kappa = job["kappa"]
         if job["payoff_scheme"] == "accumulated":
             kappa = kappa * mean_degree  # same normalisation as run.py
-        curve, _ = run_fermi(A, degree, job["b"], kappa, STEPS, payoff_scheme=job["payoff_scheme"],
+        curve, _, _ = run_fermi(A, degree, job["b"], kappa, STEPS, payoff_scheme=job["payoff_scheme"],
                              mutation=job["mutation"], seed=job["seed"])
     else:
         aspiration = job["a_fraction"] * job["b"]
-        curve, _, _ = run_bm(A, degree, job["b"], job["beta"] / mean_degree, aspiration, EPSILON,
+        curve, _, _, _ = run_bm(A, degree, job["b"], job["beta"] / mean_degree, aspiration, EPSILON,
                              STEPS, payoff_scheme="accumulated", seed=job["seed"])
     row = dict(job)
     row["sweep_window"] = curve[SWEEP_WINDOW[0]:SWEEP_WINDOW[1]].mean()
