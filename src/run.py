@@ -2,11 +2,13 @@
 One row per run in results/sweep_v2_runs.csv.
 
 Run from project root:
-    python src/run.py           full sweep (long, can be stopped and restarted)
-    python src/run.py --test    tiny grid, 2 small families, few steps (checks the code)
+    python src/run.py                  full sweep (long, can be stopped and restarted)
+    python src/run.py --test           tiny grid, 2 small families, few steps (checks the code)
+    python src/run.py --processes 4    fewer worker processes, e.g. while using the laptop
+                                       (default 12; any number, can change between restarts)
 
-Safe to stop any time: every finished run is written straight to the CSV, and a
-restart skips runs already in it.
+Safe to stop any time (Ctrl+C): every finished run is written straight to the CSV,
+and a restart skips runs already in it. Only the runs in progress are lost.
 
 Graphs: for each of the 5 real networks: real, degseq, shuffled, er, ba, ws.
 "<real>_shuffled" = the real graph, but players get new random seats after every
@@ -96,7 +98,21 @@ for family in FAMILIES:
         GRAPHS.append(family + kind)
 
 EPSILON = 0.05  # BM slip = flip the intended action, as Ezaki & Masuda 2017
-N_PROCESSES = 12
+DEFAULT_PROCESSES = 12  # laptop otherwise idle; fewer with --processes when using it
+
+
+def processes_from_command_line():
+    """Number after --processes, or DEFAULT_PROCESSES. Read in main() only: worker
+    processes import this file too and must not stop on a bad argument."""
+    if "--processes" not in sys.argv:
+        return DEFAULT_PROCESSES
+    position = sys.argv.index("--processes")
+    if position + 1 >= len(sys.argv) or not sys.argv[position + 1].isdigit():
+        sys.exit("--processes needs a whole number, e.g. --processes 4")
+    n_processes = int(sys.argv[position + 1])
+    if n_processes < 1:
+        sys.exit("--processes must be at least 1")
+    return n_processes
 
 RUNS_PATH = os.path.join(RESULTS_DIR, OUT_NAME + "_runs.csv")
 NODES_DIR = os.path.join(RESULTS_DIR, OUT_NAME + "_nodes")  # per-node cooperation
@@ -337,6 +353,7 @@ def build_missing_graphs(jobs):
 
 
 def main():
+    n_processes = processes_from_command_line()
     os.makedirs(RESULTS_DIR, exist_ok=True)
     os.makedirs(NODES_DIR, exist_ok=True)
 
@@ -354,7 +371,8 @@ def main():
     for i, graph in enumerate(GRAPHS):
         graph_position[graph] = i
     todo.sort(key=lambda job: (graph_position[job["graph"]], job["source_graph"]))
-    print(f"{len(all_jobs)} runs in sweep, {len(done)} already done, {len(todo)} to go")
+    print(f"{len(all_jobs)} runs in sweep, {len(done)} already done, {len(todo)} to go, "
+          f"{n_processes} processes")
     if not todo:
         return
 
@@ -364,7 +382,7 @@ def main():
         writer = csv.DictWriter(f, fieldnames=COLUMNS)
         if new_file:
             writer.writeheader()
-        with Pool(N_PROCESSES) as pool:
+        with Pool(n_processes) as pool:
             for i, (row, node_values) in enumerate(pool.imap_unordered(run_one, todo)):
                 # node file first: the CSV row marks the run as done. A crash in between
                 # just means the run is redone (and its node file overwritten).
