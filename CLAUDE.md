@@ -22,7 +22,7 @@ Research project: BM aspiration learning vs Fermi imitation on real networks. Qu
 Experimentation/
   CLAUDE.md
   requirements.txt
-  ResearchQ/        guide.pdf, question.md, design.md
+  ResearchQ/        guide.pdf, question.md, design.md, question_beta_heterogeneity.md (parked follow-up)
   data/             edge lists (real) + synthetic/ (generated once, fixed)
   src/              ALL code lives here, flat, no subfolders
     networks.py       load, clean, synthetic equivalents, topology metrics   [done]
