@@ -20,7 +20,7 @@ Weak PD on real social networks. How does cooperation depend on network structur
 
 - H1 (BM, small β): in the slow-learning regime (β ≤ ~0.3, cooperation flat in β) the topology effect is small and comes mostly from degrees: averaged-payoff noise ∝ 1/k, and each player's p settles to a level set by its own and its neighbours' degrees. Clustering and communities should matter little. Test: real − degseq ≈ 0, degseq − ER ≠ 0.
 - H2 (BM, growing β): topology effect grows with β. Main sweep (2026-10-08) saw the fixed-partner effect grow (A ≤ 1: 0.015 at β = 0.1 → 0.047 at β = 100); v2 checks it on all graph types.
-- H3 (Fermi): topology-sensitive where selection is strong (κ ≤ 1). At κ = 10 imitation is near-neutral (copy probability ≈ 0.45–0.55), so every graph sits near 0.5: small spread there by construction, not a finding. BM vs Fermi compared relative to each learner's own shuffled-seats baseline, not as raw spread on β vs 1/κ (no common scale).
+- H3 (Fermi): topology-sensitive where copying follows payoff gaps closely (κ ≤ 1). At κ = 10 imitation is near-neutral (copy probability ≈ 0.45–0.55), so every graph sits near 0.5: small spread there by construction, not a finding. BM vs Fermi compared relative to each learner's own shuffled-seats baseline, not as raw spread on β vs 1/κ (no common scale).
 - H4 (which structure): reported as graph-type contrasts, not single features. With these graphs, clustering, modularity and assortativity move together (real and WS vs the rest), so they cannot be separated:
   - degseq − ER = degree spread
   - WS − ER = clustering + locality, at near-equal degrees
