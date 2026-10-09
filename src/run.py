@@ -78,8 +78,9 @@ else:
     # settled even at 4000 steps (seeds split 0.28 / 1.0 / 1.0), so a fixed window
     # would only catch the transient.
     MUTATIONS = [0.01]
-    # Fermi with average payoff is near 0 already at b = 1.05: values near 1 needed
-    FERMI_TEMPTATIONS = [1.02, 1.05, 1.1, 1.3, 1.5, 1.7, 2.0]
+    # Fermi with average payoff sits at the mutation floor (~0.01-0.05) for b >= 1.02
+    # at kappa <= 0.1; b = 1.005, 1.01 lift it off (LastFM 0.08-0.11, BA 0.39-0.44)
+    FERMI_TEMPTATIONS = [1.005, 1.01, 1.02, 1.05, 1.1, 1.3, 1.5, 1.7, 2.0]
     REPS = 10
     STEPS = 1500  # BM: settled by then (pilot.py, pilot_payoffs.py)
     WINDOW = 500  # final cooperation = mean over the last 500 steps

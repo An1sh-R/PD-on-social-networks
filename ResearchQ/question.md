@@ -21,6 +21,15 @@ How does topology sensitivity of Bush–Mosteller (BM) aspiration learning chang
 - H4: features beyond degree sequence (clustering, communities, assortativity) explain the growth.
 - H5 (mentor's shuffled seats): fixed partners matter more for Fermi than BM. Re-seating every round should wipe out Fermi cooperation (imitation needs stable clusters) but hurt BM less, mainly at low β. At high β, BM partner effect may grow (fits Ezaki & Masuda 2017 network reciprocity).
 
+### Payoff comparison: averaged vs accumulated (written 2026-10-09, BEFORE sweep v2)
+
+Accumulated payoffs scaled by ⟨k⟩ (design.md). For BM this is exactly averaged BM with β_i = β·k_i/⟨k⟩: the effect is 0 on a regular graph and grows with degree spread **by construction**. So "degree CV predicts the BM payoff effect" is built in, not a result. Only real vs degseq (same degrees) can show more.
+
+- H6 (Fermi): accumulated > averaged on every static graph at κ ≤ 1; gap biggest on heterogeneous graphs (BA, GitHub, Twitch), smallest on near-regular ones (WS, ER). Shuffled seats: both near the mutation floor. Basis: Santos & Pacheco 2005, Ichinose & Sayama 2017, our `validate_fermi.py`. Ichinose & Sayama's "gap shrinks with ⟨k⟩" is NOT predicted here: our ⟨k⟩ scaling removes the overall sensitivity part.
+- H7 (BM): |accumulated − averaged| smaller than for Fermi at every graph, because BM players do not copy successful hubs, so hub success cannot spread. Sign not predicted (hubs learn faster, leaves slower; cooperation vs β is flat for β ≤ 1 and rises for β 2–10).
+- H8 (structure beyond degree): BM: payoff effect on real ≈ on degseq (|real − degseq| small next to the effect itself). Fermi: no direction predicted (clustering and assortativity are known to change how hub strategies spread, but the literature disagrees on direction).
+- Fermi averaged at the mutation floor (cooperation < 0.05, mostly κ ≤ 0.1, b ≥ 1.02): no topology comparison possible there; reported only where off the floor.
+
 ## Design sketch
 
 (Up to date version: `design.md`. Three comparisons per real graph: real vs shuffled seats = fixed partners; real vs degseq = structure beyond degree; degseq vs ER = degree heterogeneity.)

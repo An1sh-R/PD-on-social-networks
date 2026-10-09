@@ -4,14 +4,19 @@ topology sensitivity of BM change with beta, and which network features drive it
 
 0. Diagnostics   is each cell settled (drift)? Do repeats agree? Does it oscillate
                  (even_odd_gap: population flips C <-> D every round)?
-1. Sensitivity   spread (std) of cooperation across the 25 topologies, per condition
-                 ("shuffled" left out: same topology as the real graph)
+1. Sensitivity   spread (std) of cooperation across the 5 graph types of one family
+                 (real, degseq, er, ba, ws), averaged over families. Not across all 25
+                 graphs: that mostly measures family differences (N, <k>), not structure.
 2. Steps         real - shuffled (fixed partners), real - degseq (structure beyond the
                  degree sequence), degseq - er (degree heterogeneity).
                  Per family and per regime, never pooled over families (audit
-                 2026-10-08: families with opposite signs cancelled out). 95% CI over reps
-                 (paired: same seed in both graphs).
-3. Regression    cooperation ~ standardised graph features, across 25 topologies
+                 2026-10-08: families with opposite signs cancelled out). Paired by seed.
+                 95% CI over independent units: reps, except with degseq, where reps r and
+                 r+5 ran on the same rewiring -> unit = rewiring (n = 5). ER/BA/WS are one
+                 graph each: their CI holds run noise only, not graph-to-graph variation.
+3. Regression    cooperation ~ degree CV + clustering + assortativity + one dummy per
+                 family, across 25 topologies (5 families x 5 types are not independent).
+                 Mean degree left out: nearly constant within a family.
 4. Node level    per-node cooperation vs degree and local clustering (real + degseq)
 5. Assortment    P(C|C) - P(C|D) vs beta: do cooperators cluster? If real - shuffled
                  grows with beta because of reciprocity, assortment on real should too
@@ -37,11 +42,12 @@ import pandas as pd
 import statsmodels.api as sm
 from scipy import stats
 
-from networks import REAL_FILES, RESULTS_DIR, load_graph, rewired_names
+from networks import N_REWIRINGS, REAL_FILES, RESULTS_DIR, load_graph, rewired_names
 
 TEST = "--test" in sys.argv
 NAME = "sweep_v2_test" if TEST else "sweep_v2"
 FEATURES = ["mean_degree", "degree_cv", "clustering", "assortativity"]
+REGRESSION_FEATURES = ["degree_cv", "clustering", "assortativity"]  # within-family (see 3.)
 
 DRIFT_LIMIT = 0.02  # |drift| above this: run was still moving at the end
 SPREAD_LIMIT = 0.05  # std between repeats above this: repeats end at different levels
@@ -76,6 +82,31 @@ def load_bm_runs(payoff_scheme="average"):
         regimes.append(regime(row["a_fraction"], row["b"]))
     bm["regime"] = regimes
     return bm
+
+
+def independent_unit(graph_types, rep):
+    """Reps r and r+5 of a degseq graph ran on the same rewiring (run.py), so with a
+    degseq graph involved the independent unit is the rewiring, not the rep."""
+    if "degseq" in graph_types:
+        return rep % N_REWIRINGS
+    return rep
+
+
+def fit_within_family(group, outcome):
+    """OLS of outcome on standardised REGRESSION_FEATURES plus one dummy per family.
+    Returns {feature: (coef, ci_low, ci_high)} and R^2."""
+    X = group[REGRESSION_FEATURES].copy()
+    for feature in REGRESSION_FEATURES:
+        # standardise so coefficients are comparable: effect of +1 std of the feature
+        X[feature] = (X[feature] - X[feature].mean()) / X[feature].std()
+    family_dummies = pd.get_dummies(group["family"], drop_first=True, dtype=float)
+    X = sm.add_constant(pd.concat([X, family_dummies], axis=1))
+    fit = sm.OLS(group[outcome], X).fit()
+    intervals = fit.conf_int()
+    result = {}
+    for feature in REGRESSION_FEATURES:
+        result[feature] = (fit.params[feature], intervals.loc[feature, 0], intervals.loc[feature, 1])
+    return result, fit.rsquared
 
 
 def t_interval(values):
@@ -156,12 +187,17 @@ def diagnostics(bm, label):
 # ---- 1. sensitivity ----------------------------------------------------------
 
 def sensitivity(bm):
-    """Std of cooperation across topologies (all graph types except shuffled), per cell."""
+    """Per cell: std of cooperation across a family's graph types, mean over families.
+    spread_all_graphs (std across all topologies) kept for comparison only."""
     topologies = bm[bm["graph_type"] != "shuffled"]
-    means = topologies.groupby(["graph", "b", "beta", "a_fraction", "regime"], as_index=False)["cooperation"].mean()
-    table = means.groupby(["b", "beta", "a_fraction", "regime"], as_index=False)["cooperation"].agg(
-        ["std", "mean", "count"])
-    table = table.rename(columns={"std": "sensitivity", "mean": "mean_coop", "count": "n_graphs"})
+    cell = ["b", "beta", "a_fraction", "regime"]
+    means = topologies.groupby(["family", "graph"] + cell, as_index=False)["cooperation"].mean()
+    within = means.groupby(["family"] + cell, as_index=False)["cooperation"].std()
+    table = within.groupby(cell, as_index=False)["cooperation"].mean()
+    table = table.rename(columns={"cooperation": "sensitivity"})
+    overall = means.groupby(cell, as_index=False)["cooperation"].agg(["std", "mean", "count"])
+    overall = overall.rename(columns={"std": "spread_all_graphs", "mean": "mean_coop", "count": "n_graphs"})
+    table = table.merge(overall, on=cell)
     table.to_csv(out_path("_sensitivity.csv"), index=False)
 
     fig, axes = plt.subplots(1, len(SHOWN_REGIMES), figsize=(6.5 * len(SHOWN_REGIMES), 4.5), sharey=True)
@@ -173,7 +209,7 @@ def sensitivity(bm):
         ax.set_xscale("log")
         ax.set_xlabel("beta")
         ax.set_title(f"regime {shown}")
-    axes[0].set_ylabel(f"std of cooperation across {table['n_graphs'].max()} graphs")
+    axes[0].set_ylabel("std across graph types within a family, mean over families")
     axes[-1].legend(fontsize=7)
     fig.suptitle("Topology sensitivity of BM (average payoff), mean over a within regime")
     fig.savefig(out_path("_sensitivity.png"), dpi=150, bbox_inches="tight")
@@ -189,8 +225,9 @@ COMPARISONS = [("partner_effect", "real", "shuffled", "real - shuffled: fixed pa
 
 
 def steps(bm):
-    """Paired differences per family, regime and beta, with a 95% CI over reps.
-    Per rep: mean over the regime's (b, a) cells of graph1 - graph2 (same seed)."""
+    """Paired differences per family, regime and beta, with a 95% CI over independent
+    units (see independent_unit). Per rep: mean over the regime's (b, a) cells of
+    graph1 - graph2 (same seed); then averaged within each unit."""
     wide = bm.pivot_table(index=["family", "regime", "b", "beta", "a_fraction", "rep"],
                           columns="graph_type", values="cooperation").reset_index()
     rows = []
@@ -199,10 +236,15 @@ def steps(bm):
             continue
         wide["difference"] = wide[first] - wide[second]
         per_rep = wide.groupby(["family", "regime", "beta", "rep"], as_index=False)["difference"].mean()
-        for (family, shown, beta), group in per_rep.groupby(["family", "regime", "beta"]):
+        units = []
+        for rep in per_rep["rep"]:
+            units.append(independent_unit([first, second], rep))
+        per_rep["unit"] = units
+        per_unit = per_rep.groupby(["family", "regime", "beta", "unit"], as_index=False)["difference"].mean()
+        for (family, shown, beta), group in per_unit.groupby(["family", "regime", "beta"]):
             mean, half = t_interval(group["difference"])
             rows.append({"comparison": name, "family": family, "regime": shown, "beta": beta,
-                         "difference": mean, "ci": half, "n_reps": len(group)})
+                         "difference": mean, "ci": half, "n_units": len(group)})
     if not rows:
         print("steps: no comparable graph pairs in the sweep, skipped")
         return None
@@ -230,7 +272,8 @@ def steps(bm):
             ax.set_title(f"{title}\nregime {shown}", fontsize=9)
             ax.set_ylabel("cooperation difference")
     axes[0][-1].legend(fontsize=7)
-    fig.suptitle("BM (average payoff): mean over b and a within regime, 95% CI over reps")
+    fig.suptitle("BM (average payoff): mean over b and a within regime. 95% CI over reps "
+                 "(degseq: over 5 rewirings). ER = one graph: CI is run noise only")
     fig.savefig(out_path("_steps.png"), dpi=150, bbox_inches="tight")
     plt.close(fig)
     return table
@@ -265,34 +308,30 @@ def topology_features():
 
 def regression(bm):
     means = bm[bm["graph_type"] != "shuffled"].groupby(
-        ["graph", "b", "beta", "a_fraction", "regime"], as_index=False)["cooperation"].mean()
+        ["family", "graph", "b", "beta", "a_fraction", "regime"], as_index=False)["cooperation"].mean()
     data = means.merge(topology_features(), on="graph")
     n_graphs = data["graph"].nunique()
-    if n_graphs < len(FEATURES) + 3:
-        print(f"regression: only {n_graphs} graphs, need {len(FEATURES) + 3}+, skipped")
+    n_families = data["family"].nunique()
+    if n_graphs < len(REGRESSION_FEATURES) + n_families + 2:
+        print(f"regression: only {n_graphs} graphs in {n_families} families, skipped")
         return None
 
     rows = []
     for key, group in data.groupby(["b", "beta", "a_fraction", "regime"]):
-        X = group[FEATURES].copy()
-        for feature in FEATURES:
-            # standardise so coefficients are comparable: effect of +1 std of the feature
-            X[feature] = (X[feature] - X[feature].mean()) / X[feature].std()
-        X = sm.add_constant(X)
-        fit = sm.OLS(group["cooperation"], X).fit()
-        intervals = fit.conf_int()
-        for feature in FEATURES:
+        result, r_squared = fit_within_family(group, "cooperation")
+        for feature in REGRESSION_FEATURES:
+            coef, low, high = result[feature]
             rows.append({"b": key[0], "beta": key[1], "a_fraction": key[2], "regime": key[3],
-                         "feature": feature, "coef": fit.params[feature],
-                         "ci_low": intervals.loc[feature, 0], "ci_high": intervals.loc[feature, 1],
-                         "r_squared": fit.rsquared, "n_graphs": len(group)})
+                         "feature": feature, "coef": coef, "ci_low": low, "ci_high": high,
+                         "r_squared": r_squared, "n_graphs": len(group)})
     table = pd.DataFrame(rows)
     table.to_csv(out_path("_regression.csv"), index=False)
 
-    fig, axes = plt.subplots(len(SHOWN_REGIMES), len(FEATURES),
-                             figsize=(4.2 * len(FEATURES), 3.8 * len(SHOWN_REGIMES)), sharey=True, squeeze=False)
+    fig, axes = plt.subplots(len(SHOWN_REGIMES), len(REGRESSION_FEATURES),
+                             figsize=(4.2 * len(REGRESSION_FEATURES), 3.8 * len(SHOWN_REGIMES)),
+                             sharey=True, squeeze=False)
     for r, shown in enumerate(SHOWN_REGIMES):
-        for c, feature in enumerate(FEATURES):
+        for c, feature in enumerate(REGRESSION_FEATURES):
             ax = axes[r][c]
             part = table[(table["regime"] == shown) & (table["feature"] == feature)]
             for b in sorted(part["b"].unique()):
@@ -304,8 +343,8 @@ def regression(bm):
             ax.set_title(f"{feature}, regime {shown}", fontsize=9)
     axes[0][0].set_ylabel("effect of +1 std on cooperation")
     axes[0][-1].legend(fontsize=7)
-    fig.suptitle(f"BM (average payoff): regression across {n_graphs} graphs, mean coef over a. "
-                 f"Descriptive (features correlated).")
+    fig.suptitle(f"BM (average payoff): regression across {n_graphs} graphs with a dummy per family, "
+                 f"mean coef over a. Descriptive (features correlated).")
     fig.savefig(out_path("_regression.png"), dpi=150, bbox_inches="tight")
     plt.close(fig)
     return table
